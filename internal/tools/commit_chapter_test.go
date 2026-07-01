@@ -123,8 +123,8 @@ func TestCommitChapterAllowsPendingRewrite(t *testing.T) {
 	}
 }
 
-// TestCommitChapterUpdatesCastLedger 验证：commit_chapter 把本章 characters 累加进 cast_ledger，
-// cast_intros 提供的 brief_role 被采用，且 characters.json 中的核心角色不进入 ledger。
+// TestCommitChapterUpdatesCastLedger kiểm chứng: commit_chapter cộng dồn characters của chương này vào cast_ledger,
+// brief_role do cast_intros cung cấp được áp dụng, và nhân vật cốt lõi trong characters.json không vào ledger.
 func TestCommitChapterUpdatesCastLedger(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -134,7 +134,7 @@ func TestCommitChapterUpdatesCastLedger(t *testing.T) {
 	if err := s.Progress.Init("test", 10); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
-	// 设定核心角色档案（这些不应进 cast_ledger）
+	// Thiết lập hồ sơ nhân vật cốt lõi (những cái này không nên vào cast_ledger)
 	if err := s.Characters.Save([]domain.Character{
 		{Name: "林墨", Role: "主角", Tier: "core"},
 		{Name: "李清砚", Role: "导师", Tier: "important"},
@@ -185,11 +185,11 @@ func TestCommitChapterUpdatesCastLedger(t *testing.T) {
 	}
 }
 
-// TestCommitChapterRejectsPolishWithoutDraftChange 验证：已完成章节进入打磨/重写队列后，
-// 若 writer 跳过 draft_chapter 直接 commit（drafts 与 chapters 内容完全相同），
-// commit_chapter 必须拒绝，强制 writer 先调 draft_chapter 写入新版本。
-// TestCommitChapterNonLayeredRecompletesAfterRework 验证非分层书完本后经 reopen 返工，
-// 改完章节 commit、队列排空时能自动重新回到 complete（补 drain 后判完结的非分层分支）。
+// TestCommitChapterRejectsPolishWithoutDraftChange kiểm chứng: sau khi chương đã hoàn thành vào hàng đợi mài giũa/viết lại,
+// nếu writer bỏ qua draft_chapter mà commit thẳng (drafts và chapters nội dung giống hệt),
+// commit_chapter phải từ chối, buộc writer gọi draft_chapter ghi phiên bản mới trước.
+// TestCommitChapterNonLayeredRecompletesAfterRework kiểm chứng sách phi phân tầng sau khi hoàn thành rồi reopen làm lại,
+// sửa xong chương commit, khi hàng đợi sạch có thể tự động quay lại complete (nhánh phi phân tầng phán kết thúc sau khi bù drain).
 func TestCommitChapterNonLayeredRecompletesAfterRework(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -200,7 +200,7 @@ func TestCommitChapterNonLayeredRecompletesAfterRework(t *testing.T) {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
-	// 两章写完并完结。第 2 章备齐 drafts/chapters，供返工提交。
+	// Viết xong hai chương và kết thúc. Chương 2 chuẩn bị đủ drafts/chapters, để commit làm lại.
 	ch2 := "第二章原始正文，用于模拟已提交终稿。"
 	if err := s.Drafts.SaveDraft(2, ch2); err != nil {
 		t.Fatalf("SaveDraft: %v", err)
@@ -218,12 +218,12 @@ func TestCommitChapterNonLayeredRecompletesAfterRework(t *testing.T) {
 		t.Fatalf("MarkComplete: %v", err)
 	}
 
-	// reopen 第 2 章 → phase 回 writing、PendingRewrites=[2]、flow=rewriting
+	// reopen chương 2 → phase về writing, PendingRewrites=[2], flow=rewriting
 	if err := s.Progress.Reopen([]int{2}, "返工"); err != nil {
 		t.Fatalf("Reopen: %v", err)
 	}
 
-	// 返工提交（草稿需与终稿不同才放行）
+	// Commit làm lại (bản nháp phải khác bản chốt mới được thông qua)
 	if err := s.Drafts.SaveDraft(2, ch2+"\n\n返工新增段落。"); err != nil {
 		t.Fatalf("SaveDraft (reworked): %v", err)
 	}
@@ -255,11 +255,11 @@ func TestCommitChapterNonLayeredRecompletesAfterRework(t *testing.T) {
 	}
 }
 
-// TestCommitChapterLayeredReopenRecompletesDespiteOpenThread 验证收口：分层书经 reopen
-// 返工后，即便 compass 仍有未收束长线（返工可能扰动），排空后也按"结构完整"重新完结——
-// 不卡在 writing，杜绝终卷末越界续写死循环（§6.5 / known_outline_exhaustion 家族）。
-// 反证：若 reopen 路径仍用质量级 layeredBookComplete，本例 open thread 会让其返 false、
-// book_complete 为假，测试即失败。
+// TestCommitChapterLayeredReopenRecompletesDespiteOpenThread kiểm chứng việc thu xếp: sách phân tầng sau khi reopen
+// làm lại, dù compass vẫn còn sợi truyện dài chưa thu lại (làm lại có thể gây xáo trộn), sau khi sạch vẫn theo "cấu trúc đầy đủ" kết thúc lại —
+// không kẹt ở writing, dứt điểm vòng lặp viết tiếp vượt biên ở cuối quyển cuối (§6.5 / họ known_outline_exhaustion).
+// Phản chứng: nếu đường reopen vẫn dùng layeredBookComplete cấp chất lượng, open thread trong ví dụ này sẽ khiến nó trả false,
+// book_complete là giả, test sẽ thất bại.
 func TestCommitChapterLayeredReopenRecompletesDespiteOpenThread(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -270,7 +270,7 @@ func TestCommitChapterLayeredReopenRecompletesDespiteOpenThread(t *testing.T) {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
-	// 单卷单弧两章，全部展开
+	// Một quyển một cung truyện hai chương, tất cả đều mở rộng
 	foundation := NewSaveFoundationTool(s)
 	layeredArgs, _ := json.Marshal(map[string]any{
 		"type": "layered_outline",
@@ -290,7 +290,7 @@ func TestCommitChapterLayeredReopenRecompletesDespiteOpenThread(t *testing.T) {
 		t.Fatalf("Execute layered: %v", err)
 	}
 
-	// 两章写完落盘并完结
+	// Viết xong hai chương, lưu đĩa và kết thúc
 	ch2 := "第二章原始正文，模拟已提交终稿。"
 	for ch, body := range map[int]string{1: "第一章正文。", 2: ch2} {
 		if err := s.Drafts.SaveDraft(ch, body); err != nil {
@@ -307,12 +307,12 @@ func TestCommitChapterLayeredReopenRecompletesDespiteOpenThread(t *testing.T) {
 		t.Fatalf("MarkComplete: %v", err)
 	}
 
-	// 模拟"返工扰动了长线"：compass 仍有未收束的 open thread
+	// Mô phỏng "làm lại gây xáo trộn sợi truyện dài": compass vẫn còn open thread chưa thu lại
 	if err := s.Outline.SaveCompass(domain.StoryCompass{EndingDirection: "主角归乡", OpenThreads: []string{"宿敌未除"}}); err != nil {
 		t.Fatalf("SaveCompass: %v", err)
 	}
 
-	// reopen 第 2 章 → 返工提交（草稿需与终稿不同才放行）
+	// reopen chương 2 → commit làm lại (bản nháp phải khác bản chốt mới được thông qua)
 	if err := s.Progress.Reopen([]int{2}, "返工"); err != nil {
 		t.Fatalf("Reopen: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestCommitChapterRejectsPolishWithoutDraftChange(t *testing.T) {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
-	// 模拟第 2 章已正常完成：drafts 与 chapters 内容相同。
+	// Mô phỏng chương 2 đã hoàn thành bình thường: drafts và chapters nội dung giống nhau.
 	original := "第二章原始正文内容，用于模拟已提交终稿。"
 	if err := s.Drafts.SaveDraft(2, original); err != nil {
 		t.Fatalf("SaveDraft: %v", err)
@@ -365,7 +365,7 @@ func TestCommitChapterRejectsPolishWithoutDraftChange(t *testing.T) {
 		t.Fatalf("MarkChapterComplete: %v", err)
 	}
 
-	// 进入打磨队列：Flow=Polishing, PendingRewrites=[2]
+	// Vào hàng đợi mài giũa: Flow=Polishing, PendingRewrites=[2]
 	if err := s.Progress.SetPendingRewrites([]int{2}, "测试打磨"); err != nil {
 		t.Fatalf("SetPendingRewrites: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestCommitChapterRejectsPolishWithoutDraftChange(t *testing.T) {
 		t.Fatal("expected commit to be rejected when drafts equals final content")
 	}
 
-	// 再写一版不同的草稿 → 应该通过
+	// Viết thêm một bản nháp khác → phải thông qua
 	polished := original + "\n\n打磨后新增段落。"
 	if err := s.Drafts.SaveDraft(2, polished); err != nil {
 		t.Fatalf("SaveDraft (polished): %v", err)
@@ -395,9 +395,9 @@ func TestCommitChapterRejectsPolishWithoutDraftChange(t *testing.T) {
 	}
 }
 
-// TestCommitChapterLayeredRejectsOutOfRangeChapter 验证分层模式下，
-// 章号越出 layered_outline 的 commit 必须硬失败，而不是 slog.Warn 放行。
-// 这是阻止"裁定误判后 writer 一路裸跑"的物理刹车（《凡骨》ch204..347 案例）。
+// TestCommitChapterLayeredRejectsOutOfRangeChapter kiểm chứng ở chế độ phân tầng,
+// commit có số chương vượt ngoài layered_outline phải thất bại cứng, chứ không phải slog.Warn rồi cho qua.
+// Đây là phanh vật lý ngăn "sau khi phán định sai writer chạy trần một mạch" (vụ "Phàm Cốt" ch204..347).
 func TestCommitChapterLayeredRejectsOutOfRangeChapter(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -408,7 +408,7 @@ func TestCommitChapterLayeredRejectsOutOfRangeChapter(t *testing.T) {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
-	// 建一份 layered_outline，只有 1 卷 1 弧 1 章
+	// Dựng một layered_outline, chỉ có 1 quyển 1 cung truyện 1 chương
 	foundation := NewSaveFoundationTool(s)
 	layeredArgs, _ := json.Marshal(map[string]any{
 		"type": "layered_outline",
@@ -428,7 +428,7 @@ func TestCommitChapterLayeredRejectsOutOfRangeChapter(t *testing.T) {
 	}
 	_ = s.Progress.UpdatePhase(domain.PhaseWriting)
 
-	// 越界章节 2 的 commit 必须硬失败
+	// commit chương 2 vượt biên phải thất bại cứng
 	if err := s.Drafts.SaveDraft(2, "越界章节正文，必须被拦下。"); err != nil {
 		t.Fatalf("SaveDraft: %v", err)
 	}
@@ -444,7 +444,7 @@ func TestCommitChapterLayeredRejectsOutOfRangeChapter(t *testing.T) {
 		t.Fatal("expected commit to fail when chapter out of layered outline range")
 	}
 
-	// 章节文件不应落盘、Progress 不应推进
+	// File chương không nên lưu đĩa, Progress không nên tiến lên
 	if _, statErr := os.Stat(dir + "/chapters/02.md"); !os.IsNotExist(statErr) {
 		t.Fatalf("chapter 2 should not be persisted, stat err=%v", statErr)
 	}
@@ -454,11 +454,11 @@ func TestCommitChapterLayeredRejectsOutOfRangeChapter(t *testing.T) {
 	}
 }
 
-// TestCommitChapterLayeredAutoCompletesWhenDone 验证分层模式确定性完结兜底：
-// 大纲全部展开并写完 + 无骨架弧 + 无返工 + 活跃伏笔为零 + 指南针长线收束时，
-// 最后一章 commit 自动推 Phase=Complete，不依赖架构师主动调 complete_book。
-// 这是 9bf26a5 删掉分层自动完结后引入的 livelock 的修复（终卷末尾模型既不 append
-// 也不 complete → 写手裸跑越界死循环）。
+// TestCommitChapterLayeredAutoCompletesWhenDone kiểm chứng dự phòng kết thúc xác định ở chế độ phân tầng:
+// khi dàn ý đã mở rộng và viết xong hết + không còn cung truyện khung + không làm lại + phục bút đang hoạt động bằng không + sợi truyện dài của compass đã thu lại,
+// commit chương cuối tự động đẩy Phase=Complete, không phụ thuộc Architect chủ động gọi complete_book.
+// Đây là bản sửa cho livelock được đưa vào sau khi 9bf26a5 xóa tự động kết thúc phân tầng (cuối quyển cuối model không append
+// cũng không complete → writer chạy trần vượt biên vòng lặp).
 func TestCommitChapterLayeredAutoCompletesWhenDone(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -469,7 +469,7 @@ func TestCommitChapterLayeredAutoCompletesWhenDone(t *testing.T) {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
-	// 单卷单弧两章，全部展开（无骨架弧）
+	// Một quyển một cung truyện hai chương, tất cả đều mở rộng (không có cung truyện khung)
 	foundation := NewSaveFoundationTool(s)
 	layeredArgs, _ := json.Marshal(map[string]any{
 		"type": "layered_outline",
@@ -488,7 +488,7 @@ func TestCommitChapterLayeredAutoCompletesWhenDone(t *testing.T) {
 	if _, err := foundation.Execute(context.Background(), layeredArgs); err != nil {
 		t.Fatalf("Execute layered: %v", err)
 	}
-	// 指南针长线已收束（OpenThreads 空）
+	// Sợi truyện dài của compass đã thu lại (OpenThreads rỗng)
 	if err := s.Outline.SaveCompass(domain.StoryCompass{EndingDirection: "主角归乡"}); err != nil {
 		t.Fatalf("SaveCompass: %v", err)
 	}
@@ -513,7 +513,7 @@ func TestCommitChapterLayeredAutoCompletesWhenDone(t *testing.T) {
 		return out
 	}
 
-	// 第 1 章：未写完，不应完结
+	// Chương 1: chưa viết xong, không nên kết thúc
 	if bc, _ := commit(1)["book_complete"].(bool); bc {
 		t.Fatal("写完第 1 章不应触发完结")
 	}
@@ -521,7 +521,7 @@ func TestCommitChapterLayeredAutoCompletesWhenDone(t *testing.T) {
 		t.Fatal("写完第 1 章 phase 不应为 complete")
 	}
 
-	// 第 2 章（最后一章）：应自动完结
+	// Chương 2 (chương cuối): phải tự động kết thúc
 	if bc, _ := commit(2)["book_complete"].(bool); !bc {
 		t.Fatal("写完最后一章应自动完结")
 	}
@@ -530,8 +530,8 @@ func TestCommitChapterLayeredAutoCompletesWhenDone(t *testing.T) {
 	}
 }
 
-// TestCommitChapterLayeredNoAutoCompleteWithOpenThreads 验证保守性：仍有活跃长线时
-// 即使章节写满也不自动完结，把"是否继续"的裁定权留给架构师。
+// TestCommitChapterLayeredNoAutoCompleteWithOpenThreads kiểm chứng tính bảo thủ: khi vẫn còn sợi truyện dài đang hoạt động
+// thì dù chương viết đủ cũng không tự động kết thúc, để quyền phán quyết "có tiếp tục không" cho Architect.
 func TestCommitChapterLayeredNoAutoCompleteWithOpenThreads(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -557,7 +557,7 @@ func TestCommitChapterLayeredNoAutoCompleteWithOpenThreads(t *testing.T) {
 	if _, err := foundation.Execute(context.Background(), layeredArgs); err != nil {
 		t.Fatalf("Execute layered: %v", err)
 	}
-	// 仍有未收束的活跃长线
+	// Vẫn còn sợi truyện dài đang hoạt động chưa thu lại
 	if err := s.Outline.SaveCompass(domain.StoryCompass{EndingDirection: "主角归乡", OpenThreads: []string{"宿敌未除"}}); err != nil {
 		t.Fatalf("SaveCompass: %v", err)
 	}

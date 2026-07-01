@@ -20,9 +20,9 @@ func TestStripChapterTitleHeader(t *testing.T) {
 		{"keep body even if no header", "正文第一句。\n第二句。", "", "正文第一句。\n第二句。"},
 		{"do not strip non-chapter heading", "# 序章\n他望着窗外。", "边村浮生", "# 序章\n他望着窗外。"},
 		{"single line header only", "# 第 1 章", "", ""},
-		// writer 把纯章节名当标题写进首行 → 与导出器统一标题重复，应剥掉
+		// writer viết tên chương thuần làm tiêu đề ở dòng đầu → trùng với tiêu đề thống nhất của exporter, nên bóc bỏ
 		{"strip h1 matching chapter title", "# 边村浮生\n\n天还没亮。", "边村浮生", "天还没亮。"},
-		// 首行 h1 但文字不等于本章标题 → 视为正文，保留
+		// dòng đầu là h1 nhưng văn bản không bằng tiêu đề chương này → coi là nội dung, giữ lại
 		{"keep h1 not matching title", "# 别的小标题\n正文。", "边村浮生", "# 别的小标题\n正文。"},
 	}
 	for _, c := range cases {
@@ -38,7 +38,7 @@ func TestStripChapterTitleHeader(t *testing.T) {
 func TestBuildTitleIndex(t *testing.T) {
 	outline := []domain.OutlineEntry{
 		{Chapter: 1, Title: "雨夜归人"},
-		{Chapter: 2, Title: ""}, // 空标题应被过滤
+		{Chapter: 2, Title: ""}, // tiêu đề rỗng nên bị lọc bỏ
 		{Chapter: 3, Title: "破晓"},
 	}
 	idx := buildTitleIndex(outline)
@@ -56,8 +56,8 @@ func TestBuildTitleIndex(t *testing.T) {
 func TestBuildLocations(t *testing.T) {
 	volumes := []domain.VolumeOutline{
 		{Index: 1, Title: "起源", Arcs: []domain.ArcOutline{
-			{Index: 1, Title: "少年初登场", Chapters: []domain.OutlineEntry{{}, {}}}, // 2 章
-			{Index: 2, Title: "宗门试炼", Chapters: []domain.OutlineEntry{{}}},      // 1 章
+			{Index: 1, Title: "少年初登场", Chapters: []domain.OutlineEntry{{}, {}}}, // 2 chương
+			{Index: 2, Title: "宗门试炼", Chapters: []domain.OutlineEntry{{}}},      // 1 chương
 		}},
 		{Index: 2, Title: "崛起", Arcs: []domain.ArcOutline{
 			{Index: 1, Title: "初战", Chapters: []domain.OutlineEntry{{}}},
@@ -65,14 +65,14 @@ func TestBuildLocations(t *testing.T) {
 	}
 	locs := buildLocations(volumes)
 
-	// 只验卷归属：弧不再进 location，但弧层仍参与全局章号累加。
+	// Chỉ kiểm tra việc thuộc quyển: cung truyện không còn vào location, nhưng tầng cung truyện vẫn tham gia cộng dồn số chương toàn cục.
 	if loc := locs[1]; !loc.IsFirstOfVolume || loc.VolumeIdx != 1 {
 		t.Errorf("ch1 should be first of volume 1: %+v", loc)
 	}
 	if loc := locs[2]; loc.IsFirstOfVolume || loc.VolumeIdx != 1 {
 		t.Errorf("ch2 should be volume 1, not first: %+v", loc)
 	}
-	// ch3 是弧 2 的首章，但仍在卷 1 内 → 不是卷首。
+	// ch3 là chương đầu của cung truyện 2, nhưng vẫn nằm trong quyển 1 → không phải đầu quyển.
 	if loc := locs[3]; loc.IsFirstOfVolume || loc.VolumeIdx != 1 {
 		t.Errorf("ch3 (arc 2, same volume) should not be first of volume: %+v", loc)
 	}
@@ -95,7 +95,7 @@ func TestRenderTXT_TitleAndChapter(t *testing.T) {
 	if !strings.HasPrefix(got, "《光斑》\n\n") {
 		t.Errorf("missing book title at start:\n%s", got)
 	}
-	// premise 不进导出：书名后应直接是章节，不夹任何前情提要
+	// premise không vào export: sau tên sách phải là chương ngay, không kẹp bất kỳ tóm tắt tình tiết trước nào
 	if !strings.Contains(got, "第 1 章  雨夜归人") {
 		t.Errorf("missing ch1 header")
 	}
@@ -126,8 +126,8 @@ func TestRenderTXT_EmptyNovelNameNoTitleLine(t *testing.T) {
 	}
 }
 
-// TestRenderTXT_LayeredVolume 验证分层大纲只在卷首插卷分隔，弧分隔永不出现
-// （issue #27：版式定为"《书名》→卷分隔→章节正文"）。
+// TestRenderTXT_LayeredVolume kiểm tra outline phân tầng chỉ chèn phân tách quyển ở đầu quyển, phân tách cung truyện không bao giờ xuất hiện
+// (issue #27: bố cục chốt là "tên sách → phân tách quyển → nội dung chương").
 func TestRenderTXT_LayeredVolume(t *testing.T) {
 	locs := map[int]chapterLocation{
 		1: {VolumeIdx: 1, VolumeTitle: "起源", IsFirstOfVolume: true},
@@ -145,7 +145,7 @@ func TestRenderTXT_LayeredVolume(t *testing.T) {
 	if strings.Contains(got, "弧") {
 		t.Errorf("arc divider should never appear: %s", got)
 	}
-	// 卷标题只在第一章前出现一次
+	// Tiêu đề quyển chỉ xuất hiện một lần trước chương đầu tiên
 	if strings.Count(got, "第 1 卷") != 1 {
 		t.Errorf("volume header should appear exactly once: %s", got)
 	}
@@ -154,7 +154,7 @@ func TestRenderTXT_LayeredVolume(t *testing.T) {
 func TestRenderTXT_ChapterWithoutTitleFallsBackToNumberOnly(t *testing.T) {
 	got := renderTXT(
 		"", []int{5},
-		chapterTitleIndex{}, // 没有标题
+		chapterTitleIndex{}, // không có tiêu đề
 		nil,
 		map[int]string{5: "正文。"},
 	)

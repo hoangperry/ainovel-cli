@@ -6,10 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/voocel/ainovel-cli/internal/i18n"
 	"gopkg.in/yaml.v3"
 )
 
-// 已知 front matter 字段集合，用于识别未知字段并写入 conflicts。
+// Tập các trường front matter đã biết, dùng để nhận diện trường lạ và ghi vào conflicts.
 var knownFrontMatterFields = map[string]struct{}{
 	"genre":             {},
 	"chapter_words":     {},
@@ -18,15 +19,15 @@ var knownFrontMatterFields = map[string]struct{}{
 	"fatigue_words":     {},
 }
 
-// Parse 解析单份 rules.md 内容（front matter + Markdown）。
+// Parse phân tích nội dung một bản rules.md (front matter + Markdown).
 //
-// 容错策略：
-//   - front matter 整体解析失败：不阻断，正文仍作为偏好，conflicts 记录 parse_error
-//   - 未知字段：丢弃，conflicts 记录 unknown_field
-//   - 字段类型错误：丢弃该字段，conflicts 记录 type_error
-//   - 字段值非法（如 chapter_words 无法解析为范围）：丢弃，conflicts 记录 invalid_value
+// Chiến lược dung lỗi:
+//   - parse toàn bộ front matter thất bại: không chặn, nội dung vẫn làm preference, conflicts ghi parse_error
+//   - trường lạ: loại bỏ, conflicts ghi unknown_field
+//   - trường sai kiểu: loại bỏ trường đó, conflicts ghi type_error
+//   - giá trị trường không hợp lệ (ví dụ chapter_words không parse được thành khoảng): loại bỏ, conflicts ghi invalid_value
 //
-// source 是文件路径，仅用于 conflicts.source；kind 决定优先级。
+// source là đường dẫn file, chỉ dùng cho conflicts.source; kind quyết định ưu tiên.
 func Parse(source string, kind SourceKind, content []byte) Parsed {
 	parsed := Parsed{Source: source, Kind: kind}
 
@@ -37,14 +38,14 @@ func Parse(source string, kind SourceKind, content []byte) Parsed {
 		return parsed
 	}
 
-	// 先 unmarshal 到 map[string]any，再逐字段强类型解析。
-	// 这样能区分"字段不存在"和"字段类型错误"，并能识别未知字段。
+	// Trước hết unmarshal vào map[string]any, rồi parse từng trường theo kiểu chặt chẽ.
+	// Cách này phân biệt được "trường không tồn tại" và "trường sai kiểu", đồng thời nhận diện được trường lạ.
 	var raw map[string]any
 	if err := yaml.Unmarshal([]byte(fmText), &raw); err != nil {
 		parsed.Conflicts = append(parsed.Conflicts, Conflict{
 			Source: source,
 			Kind:   ConflictParseError,
-			Detail: fmt.Sprintf("front matter YAML 解析失败: %v", err),
+			Detail: i18n.Tf("rules.parse.yaml_failed", err),
 		})
 		return parsed
 	}
@@ -55,7 +56,7 @@ func Parse(source string, kind SourceKind, content []byte) Parsed {
 				Source: source,
 				Kind:   ConflictUnknownField,
 				Field:  key,
-				Detail: fmt.Sprintf("未知字段 %q，Phase 1 不支持；已忽略", key),
+				Detail: i18n.Tf("rules.parse.unknown_field", key),
 			})
 			continue
 		}
@@ -65,18 +66,18 @@ func Parse(source string, kind SourceKind, content []byte) Parsed {
 	return parsed
 }
 
-// splitFrontMatter 切分 `---` 包裹的 front matter 与剩余正文。
+// splitFrontMatter tách front matter được bọc bởi `---` khỏi phần nội dung còn lại.
 //
-// 约定：
-//   - 文件以 `---` 起始（允许 BOM / 空行）才认为有 front matter
-//   - 第二个 `---` 之后是正文
-//   - 没有 front matter：全文作为正文
-//   - 只有起始 `---` 没有终止 `---`：视为无 front matter（避免吞掉整篇正文）
+// Quy ước:
+//   - file phải bắt đầu bằng `---` (cho phép BOM / dòng trống) mới coi là có front matter
+//   - phần sau `---` thứ hai là nội dung
+//   - không có front matter: toàn văn làm nội dung
+//   - chỉ có `---` mở đầu mà không có `---` kết thúc: coi như không có front matter (tránh nuốt cả bài)
 func splitFrontMatter(content []byte) (fm, body string) {
-	text := string(bytes.TrimPrefix(content, []byte{0xEF, 0xBB, 0xBF})) // 去 UTF-8 BOM
+	text := string(bytes.TrimPrefix(content, []byte{0xEF, 0xBB, 0xBF})) // bỏ UTF-8 BOM
 	lines := strings.Split(text, "\n")
 
-	// 找第一个非空行；不是 `---` 则全是正文
+	// tìm dòng không rỗng đầu tiên; không phải `---` thì toàn bộ là nội dung
 	start := -1
 	for i, line := range lines {
 		if strings.TrimSpace(line) == "" {
@@ -91,7 +92,7 @@ func splitFrontMatter(content []byte) (fm, body string) {
 		return "", text
 	}
 
-	// 找第二个 `---`
+	// tìm `---` thứ hai
 	end := -1
 	for i := start + 1; i < len(lines); i++ {
 		if strings.TrimSpace(lines[i]) == "---" {
@@ -100,7 +101,7 @@ func splitFrontMatter(content []byte) (fm, body string) {
 		}
 	}
 	if end < 0 {
-		// 起始有 `---` 但没闭合：保守视为无 front matter
+		// có `---` mở đầu nhưng không đóng: bảo thủ coi như không có front matter
 		return "", text
 	}
 
@@ -109,7 +110,7 @@ func splitFrontMatter(content []byte) (fm, body string) {
 	return fm, body
 }
 
-// applyField 把单条 raw 字段塞进 Parsed.Structured，类型不匹配时写 conflicts。
+// applyField nhét một trường raw vào Parsed.Structured, khi kiểu không khớp thì ghi conflicts.
 func applyField(p *Parsed, key string, val any) {
 	switch key {
 	case "genre":
@@ -127,7 +128,7 @@ func applyField(p *Parsed, key string, val any) {
 				Source: p.Source,
 				Kind:   ConflictInvalidValue,
 				Field:  key,
-				Detail: fmt.Sprintf("chapter_words 期望区间 \"min-max\"（如 3000-6000）或单个目标值（如 2500），收到 %v", val),
+				Detail: i18n.Tf("rules.parse.chapter_words_format", val),
 			})
 			return
 		}
@@ -152,23 +153,23 @@ func applyField(p *Parsed, key string, val any) {
 	case "fatigue_words":
 		m, ok := parseFatigueWords(p, val)
 		if !ok {
-			p.Conflicts = append(p.Conflicts, typeErr(p.Source, key, "map[string]int 或 []string", val))
+			p.Conflicts = append(p.Conflicts, typeErr(p.Source, key, i18n.T("rules.type.map_or_list"), val))
 			return
 		}
 		p.Structured.FatigueWords = m
 	}
 }
 
-// parseChapterWords 解析章节字数范围为 *WordRange，接受三种写法：
-//   - "min-max" 区间字符串（如 "3000-6000"）
-//   - {min, max} 映射
-//   - 单个正整数 N（裸数字 2500 或字符串 "2500"）——按"目标 N 字/章"理解，自动
-//     展开为 N±20% 区间。否则用户凭直觉写单值会被静默丢弃、回落内置默认（issue #41）。
+// parseChapterWords parse khoảng số chữ của chương thành *WordRange, chấp nhận ba cách viết:
+//   - chuỗi khoảng "min-max" (ví dụ "3000-6000")
+//   - map {min, max}
+//   - một số nguyên dương N (số trần 2500 hoặc chuỗi "2500")——hiểu là "mục tiêu N chữ/chương", tự động
+//     mở rộng thành khoảng N±20%. Nếu không thì người dùng viết theo trực giác một giá trị đơn sẽ bị loại bỏ im lặng, rơi về mặc định tích hợp (issue #41).
 func parseChapterWords(val any) (*WordRange, bool) {
 	switch v := val.(type) {
 	case string:
 		s := strings.TrimSpace(v)
-		if !strings.Contains(s, "-") { // 单值写法，如 "2500"
+		if !strings.Contains(s, "-") { // cách viết giá trị đơn, như "2500"
 			if n, err := strconv.Atoi(s); err == nil && n > 0 {
 				return wordBandAround(n), true
 			}
@@ -191,7 +192,7 @@ func parseChapterWords(val any) (*WordRange, bool) {
 			return nil, false
 		}
 		return &WordRange{Min: minV, Max: maxV}, true
-	default: // 裸数字，YAML 解析为 int / float64
+	default: // số trần, YAML parse thành int / float64
 		if n, ok := asInt(v); ok && n > 0 {
 			return wordBandAround(n), true
 		}
@@ -199,16 +200,16 @@ func parseChapterWords(val any) (*WordRange, bool) {
 	}
 }
 
-// wordBandAround 把"目标 N 字/章"展开为 ±20% 的舒适区间（如 2500 → 2000-3000），
-// 让单值写法等价于一个合理区间，而不是 N-N 的硬墙（紧区间会逼出压缩死循环）。
+// wordBandAround mở rộng "mục tiêu N chữ/chương" thành khoảng thoải mái ±20% (như 2500 → 2000-3000),
+// để cách viết giá trị đơn tương đương một khoảng hợp lý, thay vì bức tường cứng N-N (khoảng quá chặt sẽ ép ra vòng lặp nén vô tận).
 func wordBandAround(n int) *WordRange {
 	return &WordRange{Min: n * 4 / 5, Max: n * 6 / 5}
 }
 
-// parseFatigueWords 同时接受 map[string]int（带阈值）与 []string（默认阈值 1）。
+// parseFatigueWords chấp nhận đồng thời map[string]int (kèm ngưỡng) và []string (ngưỡng mặc định 1).
 //
-// 单 key 类型错或阈值非法都会写 conflict 进 p.Conflicts，绝不静默吞。
-// 返回 (map, true) 表示存在合法项；(nil, false) 表示整体类型错或全部项非法。
+// Một key sai kiểu hay ngưỡng không hợp lệ đều ghi conflict vào p.Conflicts, tuyệt đối không nuốt im lặng.
+// Trả về (map, true) nghĩa là có mục hợp lệ; (nil, false) nghĩa là sai kiểu tổng thể hoặc mọi mục đều không hợp lệ.
 func parseFatigueWords(p *Parsed, val any) (map[string]int, bool) {
 	switch v := val.(type) {
 	case map[string]any:
@@ -220,7 +221,7 @@ func parseFatigueWords(p *Parsed, val any) (map[string]int, bool) {
 					Source: p.Source,
 					Kind:   ConflictInvalidValue,
 					Field:  "fatigue_words",
-					Detail: "fatigue_words 出现空白 key，已跳过",
+					Detail: i18n.T("rules.parse.fatigue_blank_key"),
 				})
 				continue
 			}
@@ -230,7 +231,7 @@ func parseFatigueWords(p *Parsed, val any) (map[string]int, bool) {
 					Source: p.Source,
 					Kind:   ConflictTypeError,
 					Field:  "fatigue_words." + trimmed,
-					Detail: fmt.Sprintf("fatigue_words[%q] 期望 int 阈值，收到 %T（%v）；已丢弃该 key", trimmed, raw, raw),
+					Detail: i18n.Tf("rules.parse.fatigue_int_expected", trimmed, raw, raw),
 				})
 				continue
 			}
@@ -239,7 +240,7 @@ func parseFatigueWords(p *Parsed, val any) (map[string]int, bool) {
 					Source: p.Source,
 					Kind:   ConflictInvalidValue,
 					Field:  "fatigue_words." + trimmed,
-					Detail: fmt.Sprintf("fatigue_words[%q] 阈值必须 > 0，收到 %d；已丢弃该 key", trimmed, n),
+					Detail: i18n.Tf("rules.parse.fatigue_threshold_pos", trimmed, n),
 				})
 				continue
 			}
@@ -258,7 +259,7 @@ func parseFatigueWords(p *Parsed, val any) (map[string]int, bool) {
 					Source: p.Source,
 					Kind:   ConflictTypeError,
 					Field:  fmt.Sprintf("fatigue_words[%d]", i),
-					Detail: fmt.Sprintf("fatigue_words 列表元素期望 string，收到 %T（%v）；已丢弃该元素", raw, raw),
+					Detail: i18n.Tf("rules.parse.fatigue_list_string", raw, raw),
 				})
 				continue
 			}
@@ -268,7 +269,7 @@ func parseFatigueWords(p *Parsed, val any) (map[string]int, bool) {
 					Source: p.Source,
 					Kind:   ConflictInvalidValue,
 					Field:  fmt.Sprintf("fatigue_words[%d]", i),
-					Detail: "fatigue_words 列表元素为空白；已丢弃",
+					Detail: i18n.T("rules.parse.fatigue_list_blank"),
 				})
 				continue
 			}
@@ -283,14 +284,14 @@ func parseFatigueWords(p *Parsed, val any) (map[string]int, bool) {
 	}
 }
 
-// asString / asInt / asStringList 是 yaml.v3 反序列化后类型归一化的小工具。
+// asString / asInt / asStringList là các tiện ích nhỏ chuẩn hóa kiểu sau khi yaml.v3 deserialize.
 //
-// 严格策略（Debug-First）：只接受目标类型，不自动转换其他类型。
-// 类型错误由调用方写入 conflicts，不在工具内静默修复。
+// Chiến lược chặt chẽ (Debug-First): chỉ chấp nhận kiểu mục tiêu, không tự động chuyển các kiểu khác.
+// Lỗi kiểu do caller ghi vào conflicts, không sửa im lặng bên trong tiện ích.
 
-// asString 仅接受 string 标量。
-// 注意：YAML 里 `genre: 42`（无引号）会被反序列化成 int，按本函数判定为类型错误。
-// 用户应写 `genre: "42"` 显式声明 string。
+// asString chỉ chấp nhận scalar string.
+// Lưu ý: trong YAML `genre: 42` (không ngoặc) sẽ bị deserialize thành int, theo hàm này phán định là lỗi kiểu.
+// Người dùng nên viết `genre: "42"` để khai báo string một cách tường minh.
 func asString(v any) (string, bool) {
 	if s, ok := v.(string); ok {
 		return s, true
@@ -298,8 +299,8 @@ func asString(v any) (string, bool) {
 	return "", false
 }
 
-// asInt 接受所有整型；float64 仅在恰好是整数时接受（YAML 数字默认解析为 float64）。
-// 字符串数字不再自动转——避免与"字段错放成字符串"的失误混淆。
+// asInt chấp nhận mọi kiểu nguyên; float64 chỉ chấp nhận khi đúng là số nguyên (số YAML mặc định parse thành float64).
+// Số dạng chuỗi không còn tự động chuyển——tránh nhầm lẫn với lỗi "đặt nhầm trường thành chuỗi".
 func asInt(v any) (int, bool) {
 	switch x := v.(type) {
 	case int:
@@ -307,7 +308,7 @@ func asInt(v any) (int, bool) {
 	case int64:
 		return int(x), true
 	case float64:
-		// 仅当 float 恰好是整数时接受（如 yaml 解析的 `5` → float64(5.0)）
+		// chỉ chấp nhận khi float đúng là số nguyên (như yaml parse `5` → float64(5.0))
 		if x == float64(int(x)) {
 			return int(x), true
 		}
@@ -317,8 +318,8 @@ func asInt(v any) (int, bool) {
 	}
 }
 
-// asStringList 元素必须是 string；其他类型该元素跳过并写入 conflicts。
-// 返回 (list, true) 表示存在合法元素；(nil, false) 表示整体类型错或全部元素非法。
+// asStringList phần tử phải là string; phần tử kiểu khác bị bỏ qua và ghi vào conflicts.
+// Trả về (list, true) nghĩa là có phần tử hợp lệ; (nil, false) nghĩa là sai kiểu tổng thể hoặc mọi phần tử đều không hợp lệ.
 func asStringList(p *Parsed, field string, v any) ([]string, bool) {
 	arr, ok := v.([]any)
 	if !ok {
@@ -332,7 +333,7 @@ func asStringList(p *Parsed, field string, v any) ([]string, bool) {
 				Source: p.Source,
 				Kind:   ConflictTypeError,
 				Field:  fmt.Sprintf("%s[%d]", field, i),
-				Detail: fmt.Sprintf("%s 列表元素期望 string，收到 %T（%v）；已丢弃该元素", field, raw, raw),
+				Detail: i18n.Tf("rules.parse.list_string_expected", field, raw, raw),
 			})
 			continue
 		}
@@ -351,6 +352,6 @@ func typeErr(source, field, expected string, got any) Conflict {
 		Source: source,
 		Kind:   ConflictTypeError,
 		Field:  field,
-		Detail: fmt.Sprintf("字段 %s 类型错误，期望 %s，收到 %T（%v）；已丢弃", field, expected, got, got),
+		Detail: i18n.Tf("rules.parse.type_error", field, expected, got, got),
 	}
 }

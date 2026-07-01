@@ -16,7 +16,7 @@ const validGlobal = `{
   "providers": { "openrouter": { "api_key": "sk-test-123456" } }
 }`
 
-// writeGlobal 在隔离的 HOME 下写入全局配置，并返回该 HOME。
+// writeGlobal ghi cấu hình toàn cục dưới HOME cô lập, và trả về HOME đó.
 func writeGlobal(t *testing.T, content string) string {
 	t.Helper()
 	home := t.TempDir()
@@ -33,8 +33,8 @@ func writeGlobal(t *testing.T, content string) string {
 	return home
 }
 
-// writeProjectConfig 在当前工作目录的 ./.ainovel/ 下写入项目级配置。
-// 调用前需先 t.Chdir 到目标目录。
+// writeProjectConfig ghi cấu hình mức project dưới ./.ainovel/ của thư mục làm việc hiện tại.
+// Trước khi gọi cần t.Chdir tới thư mục đích.
 func writeProjectConfig(t *testing.T, content string) {
 	t.Helper()
 	if err := os.MkdirAll(".ainovel", 0o755); err != nil {
@@ -45,12 +45,12 @@ func writeProjectConfig(t *testing.T, content string) {
 	}
 }
 
-// 根因 3：项目级 ./.ainovel/config.json 存在但是坏 JSON，必须报错，不能静默吞掉退回全局。
+// Căn nguyên 3: ./.ainovel/config.json mức project tồn tại nhưng JSON hỏng, phải báo lỗi, không được nuốt im lặng rồi lùi về toàn cục.
 func TestLoadConfig_CorruptProjectFailsLoud(t *testing.T) {
 	writeGlobal(t, validGlobal)
 	proj := t.TempDir()
 	t.Chdir(proj)
-	// 手抄示例多了个尾逗号——最常见的坏 JSON。
+	// Chép tay ví dụ dư một dấu phẩy đuôi — JSON hỏng phổ biến nhất.
 	writeProjectConfig(t, `{ "model": "x", }`)
 
 	if _, err := LoadConfig(""); err == nil {
@@ -58,8 +58,8 @@ func TestLoadConfig_CorruptProjectFailsLoud(t *testing.T) {
 	}
 }
 
-// 全局是最低优先级基底：坏文件不得阻断更高优先级的 --config 覆盖（回归守卫——
-// 上一版误把全局也 fail-loud，导致"坏全局 + 有效 --config"的用户被无关文件挡住）。
+// Toàn cục là nền ưu tiên thấp nhất: file hỏng không được chặn override --config ưu tiên cao hơn (guard hồi quy —
+// bản trước lỡ để toàn cục cũng fail-loud, khiến người dùng có "global hỏng + --config hợp lệ" bị file không liên quan chặn lại).
 func TestLoadConfig_CorruptGlobalDoesNotBlockOverride(t *testing.T) {
 	writeGlobal(t, `{ not json`)
 	proj := t.TempDir()
@@ -78,18 +78,18 @@ func TestLoadConfig_CorruptGlobalDoesNotBlockOverride(t *testing.T) {
 	}
 }
 
-// 文件不存在是正常情况（便携/首次），不能报错。
+// File không tồn tại là tình huống bình thường (bản portable/lần đầu), không được báo lỗi.
 func TestLoadConfig_MissingFilesNoError(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home) // ~/.ainovel/config.json 不存在
-	t.Chdir(t.TempDir())   // 也没有 ./.ainovel/config.json
+	t.Chdir(t.TempDir())   // cũng không có ./.ainovel/config.json
 
 	if _, err := LoadConfig(""); err != nil {
 		t.Fatalf("缺失配置文件不应报错，得到: %v", err)
 	}
 }
 
-// 正常路径：全局 + 项目级合并生效。
+// Đường bình thường: toàn cục + mức project hợp nhất có hiệu lực.
 func TestLoadConfig_ValidMergeWorks(t *testing.T) {
 	writeGlobal(t, validGlobal)
 	proj := t.TempDir()
@@ -183,8 +183,21 @@ func TestMergeConfig_ProviderExtraFields(t *testing.T) {
 	}
 }
 
-// 根因 2（issue #37 核心复现）：项目级覆盖 provider 但没声明对应 providers 凭证，
-// ValidateBase 必须报 config 错误（而非放行后在更深处崩溃）。
+// mergeConfig phải truyền ui_lang/output_lang từ overlay; thiếu clause là âm thầm
+// nuốt override (cùng lớp bug issue #37). Đồng thời giữ giá trị base khi overlay rỗng.
+func TestMergeConfig_LangFields(t *testing.T) {
+	base := Config{UILang: "vi", OutputLang: "vi"}
+	overlay := Config{UILang: "en", OutputLang: "en"}
+	if got := mergeConfig(base, overlay); got.UILang != "en" || got.OutputLang != "en" {
+		t.Fatalf("overlay lang bị nuốt: ui=%q out=%q, want en/en", got.UILang, got.OutputLang)
+	}
+	if got := mergeConfig(base, Config{}); got.UILang != "vi" || got.OutputLang != "vi" {
+		t.Fatalf("overlay rỗng không được ghi đè base: ui=%q out=%q, want vi/vi", got.UILang, got.OutputLang)
+	}
+}
+
+// Căn nguyên 2 (tái hiện cốt lõi issue #37): mức project override provider nhưng không khai báo credential providers tương ứng,
+// ValidateBase phải báo lỗi config (thay vì cho qua rồi sập ở chỗ sâu hơn).
 func TestValidateBase_ProviderOverrideWithoutCredentials(t *testing.T) {
 	cfg := Config{
 		Provider:  "mimo",
@@ -203,8 +216,8 @@ func TestValidateBase_ProviderOverrideWithoutCredentials(t *testing.T) {
 	}
 }
 
-// 内置示例（go:embed 的 config.example.jsonc）必须自洽：去注释后是合法 JSON、
-// 顶层 provider 指针不悬空、且点破了“指针”心智——它是用户照抄的样板，自己坏了就坑人。
+// Ví dụ tích hợp sẵn (config.example.jsonc qua go:embed) phải tự nhất quán: sau khi bỏ comment là JSON hợp lệ,
+// con trỏ provider tầng đỉnh không treo lửng, và phải chỉ rõ tư duy "con trỏ" — nó là khuôn mẫu người dùng chép theo, tự nó hỏng là hại người.
 func TestExampleConfigIsValidAndSelfConsistent(t *testing.T) {
 	if exampleConfig == "" {
 		t.Fatal("go:embed 未生效，exampleConfig 为空")

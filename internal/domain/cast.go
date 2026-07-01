@@ -1,31 +1,31 @@
 package domain
 
-// CastEntry 是配角名册中一条配角记录。
+// CastEntry là một bản ghi nhân vật phụ trong danh sách nhân vật phụ.
 //
-// 与 Character（characters.json，Architect 维护的核心档案）解耦：
-//   - CastEntry 由 commit_chapter 工具自动累加，记录"出现过的有名字的次要角色"
-//   - Character 由 Architect 显式设计，记录主角和关键配角的人格弧线/特质/tier
+// Tách rời với Character (characters.json, hồ sơ cốt lõi do Architect duy trì):
+//   - CastEntry do tool commit_chapter tự tích lũy, ghi lại "nhân vật thứ yếu có tên đã từng xuất hiện"
+//   - Character do Architect thiết kế tường minh, ghi lại nhân vật chính và nhân vật phụ then chốt cùng cung tính cách/đặc điểm/tier
 //
-// 同名时以 Character 为准（核心角色不进 cast_ledger），避免重复。
+// Khi trùng tên thì lấy Character làm chuẩn (nhân vật cốt lõi không vào cast_ledger), tránh trùng lặp.
 type CastEntry struct {
 	Name string `json:"name"`
-	// Aliases 当前没有写入通道；预留给将来的"用户 steer 合并别名"工具
-	// （如把'李掌柜'与'老李'声明为同一人）。MergeAppearances 已支持别名查找。
+	// Aliases hiện chưa có kênh ghi vào; để dành cho tool "người dùng steer gộp bí danh" tương lai
+	// (ví dụ khai báo 'Lý chưởng quầy' và 'lão Lý' là cùng một người). MergeAppearances đã hỗ trợ tra cứu bí danh.
 	Aliases          []string `json:"aliases,omitempty"`
-	BriefRole        string   `json:"brief_role,omitempty"` // 一句话定位（首次出场由 Writer 填，可后续补全；不被覆盖）
+	BriefRole        string   `json:"brief_role,omitempty"` // định vị một câu (lần đầu xuất hiện do Writer điền, có thể bổ sung sau; không bị ghi đè)
 	FirstSeenChapter int      `json:"first_seen_chapter"`
 	LastSeenChapter  int      `json:"last_seen_chapter"`
-	// AppearanceCount 派生自 len(AppearanceChapters)，merge 时保持同步。
-	// 保留显式字段方便 UI/JSON 直接读，无需每次重算。
+	// AppearanceCount dẫn xuất từ len(AppearanceChapters), giữ đồng bộ khi merge.
+	// Giữ field tường minh để UI/JSON đọc trực tiếp, khỏi tính lại mỗi lần.
 	AppearanceCount    int   `json:"appearance_count"`
 	AppearanceChapters []int `json:"appearance_chapters"`
-	// Promoted 标记此条目已升格到 characters.json。RecentActive 会跳过这些条目，
-	// 避免与核心档案重复召回。当前升格通道未实现，字段为预留 hook。
+	// Promoted đánh dấu mục này đã được thăng cấp lên characters.json. RecentActive sẽ bỏ qua các mục này,
+	// tránh gọi lại trùng với hồ sơ cốt lõi. Kênh thăng cấp hiện chưa hiện thực, field là hook để dành.
 	Promoted bool `json:"promoted,omitempty"`
 }
 
-// CastIntro 是 Writer 在 commit_chapter 时对新出场角色的简介声明。
-// 仅在该名字首次出现或 ledger 中 BriefRole 仍为空时才被采用。
+// CastIntro là khai báo giới thiệu của Writer về nhân vật mới xuất hiện khi commit_chapter.
+// Chỉ được dùng khi tên này lần đầu xuất hiện hoặc BriefRole trong ledger vẫn còn rỗng.
 type CastIntro struct {
 	Name      string `json:"name"`
 	BriefRole string `json:"brief_role"`

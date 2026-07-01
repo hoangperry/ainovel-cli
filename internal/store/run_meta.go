@@ -7,19 +7,19 @@ import (
 	"github.com/voocel/ainovel-cli/internal/domain"
 )
 
-// RunMetaStore 管理运行元信息（模型、干预历史、规划级别等）。
+// RunMetaStore quản lý metadata vận hành (model, lịch sử can thiệp, mức kế hoạch, v.v.).
 type RunMetaStore struct{ io *IO }
 
 func NewRunMetaStore(io *IO) *RunMetaStore { return &RunMetaStore{io: io} }
 
-// Save 保存运行元信息到 meta/run.json。
+// Save lưu metadata vận hành vào meta/run.json.
 func (s *RunMetaStore) Save(meta domain.RunMeta) error {
 	s.io.mu.Lock()
 	defer s.io.mu.Unlock()
 	return s.saveUnlocked(meta)
 }
 
-// Load 读取运行元信息。
+// Load đọc metadata vận hành.
 func (s *RunMetaStore) Load() (*domain.RunMeta, error) {
 	s.io.mu.RLock()
 	defer s.io.mu.RUnlock()
@@ -41,7 +41,7 @@ func (s *RunMetaStore) saveUnlocked(meta domain.RunMeta) error {
 	return s.io.WriteJSONUnlocked("meta/run.json", meta)
 }
 
-// Init 初始化或更新运行元信息，保留已有的 SteerHistory。
+// Init khởi tạo hoặc cập nhật metadata vận hành, giữ lại SteerHistory hiện có.
 func (s *RunMetaStore) Init(style, provider, model string) error {
 	return s.io.WithWriteLock(func() error {
 		existing, err := s.loadUnlocked()
@@ -63,7 +63,7 @@ func (s *RunMetaStore) Init(style, provider, model string) error {
 	})
 }
 
-// AppendSteerEntry 追加用户干预记录。
+// AppendSteerEntry thêm bản ghi can thiệp của người dùng.
 func (s *RunMetaStore) AppendSteerEntry(entry domain.SteerEntry) error {
 	return s.io.WithWriteLock(func() error {
 		meta, err := s.loadUnlocked()
@@ -78,7 +78,7 @@ func (s *RunMetaStore) AppendSteerEntry(entry domain.SteerEntry) error {
 	})
 }
 
-// SetPendingSteer 记录未完成的 Steer 指令。
+// SetPendingSteer ghi lại chỉ thị Steer chưa hoàn thành.
 func (s *RunMetaStore) SetPendingSteer(input string) error {
 	return s.io.WithWriteLock(func() error {
 		meta, err := s.loadUnlocked()
@@ -93,7 +93,7 @@ func (s *RunMetaStore) SetPendingSteer(input string) error {
 	})
 }
 
-// ClearPendingSteer 清除已处理的 Steer 指令。
+// ClearPendingSteer xóa chỉ thị Steer đã xử lý.
 func (s *RunMetaStore) ClearPendingSteer() error {
 	return s.io.WithWriteLock(func() error {
 		meta, err := s.loadUnlocked()
@@ -108,7 +108,7 @@ func (s *RunMetaStore) ClearPendingSteer() error {
 	})
 }
 
-// SetPlanningTier 记录当前作品的规划级别。
+// SetPlanningTier ghi lại mức kế hoạch của tác phẩm hiện tại.
 func (s *RunMetaStore) SetPlanningTier(tier domain.PlanningTier) error {
 	return s.io.WithWriteLock(func() error {
 		meta, err := s.loadUnlocked()

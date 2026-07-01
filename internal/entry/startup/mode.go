@@ -2,26 +2,26 @@ package startup
 
 import "fmt"
 
-// startup 层承载“进入 Engine 之前”的启动编排。
-// 分层约定：
-// 1. entry/tui、entry/headless 是宿主入口；
-// 2. startup 负责快速/共创/续写等启动策略；
-// 3. orchestrator.Engine 只负责正式会话执行，不负责模式前置准备。
+// Lớp startup đảm nhận việc điều phối khởi động "trước khi vào Engine".
+// Quy ước phân lớp:
+// 1. entry/tui, entry/headless là entry của host;
+// 2. startup lo các chiến lược khởi động như nhanh/đồng sáng tác/viết tiếp;
+// 3. orchestrator.Engine chỉ lo thực thi phiên chính thức, không lo chuẩn bị trước chế độ.
 
-// Mode 表示进入 Engine 之前的启动策略类型。
+// Mode biểu thị loại chiến lược khởi động trước khi vào Engine.
 type Mode string
 
 const (
-	// ModeQuick 直接以用户输入作为创作起点。
+	// ModeQuick lấy trực tiếp input người dùng làm điểm khởi đầu sáng tác.
 	ModeQuick Mode = "quick"
-	// ModeCoCreate 先做多轮澄清，再产出创作草稿进入 Engine。
+	// ModeCoCreate làm rõ qua nhiều vòng trước, rồi sản bản nháp sáng tác để vào Engine.
 	ModeCoCreate Mode = "cocreate"
-	// ModeContinueFromNovel 基于已有小说内容装配上下文后续写。
+	// ModeContinueFromNovel lắp ghép context dựa trên nội dung tiểu thuyết có sẵn rồi viết tiếp.
 	ModeContinueFromNovel Mode = "continue_from_novel"
 )
 
-// Request 描述入口层提交给启动策略层的原始输入。
-// 宿主入口先收集用户输入，再由 startup 把它整理为可进入 Engine 的计划。
+// Request mô tả input thô mà lớp entry gửi cho lớp chiến lược khởi động.
+// Entry của host thu thập input người dùng trước, rồi startup chỉnh nó thành kế hoạch có thể vào Engine.
 type Request struct {
 	Mode        Mode
 	UserPrompt  string
@@ -30,8 +30,8 @@ type Request struct {
 	Interactive bool
 }
 
-// Plan 描述启动策略层产出的结果。
-// 宿主入口不应自己拼接正式启动 prompt，而应消费 Plan 再驱动 Engine。
+// Plan mô tả kết quả mà lớp chiến lược khởi động sản ra.
+// Entry của host không nên tự ghép prompt khởi động chính thức, mà nên tiêu thụ Plan rồi điều khiển Engine.
 type Plan struct {
 	Mode        Mode
 	DisplayName string
@@ -39,11 +39,11 @@ type Plan struct {
 	ResumeOnly  bool
 }
 
-// ErrNotImplemented 标记占位策略尚未落地。
+// ErrNotImplemented đánh dấu chiến lược placeholder chưa được triển khai.
 var ErrNotImplemented = fmt.Errorf("startup mode not implemented")
 
-// PrepareContinueFromNovel 是“根据已有小说续写”的统一预留落点。
-// TUI/headless 未来都应先把输入整理到 Request，再从这里产出可进入 Engine 的 Plan。
+// PrepareContinueFromNovel là điểm dự trữ thống nhất cho "viết tiếp dựa trên tiểu thuyết có sẵn".
+// TUI/headless sau này đều nên chỉnh input vào Request trước, rồi từ đây sản ra Plan có thể vào Engine.
 func PrepareContinueFromNovel(req Request) (Plan, error) {
 	return Plan{}, fmt.Errorf("%w: %s", ErrNotImplemented, ModeContinueFromNovel)
 }

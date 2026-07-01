@@ -27,9 +27,9 @@ func TestComputePatterns(t *testing.T) {
 		t.Fatal("expected stats")
 	}
 	want := map[string]int{
-		"矫正句『不是…(而)是…』":          6,
-		"计时量词『X息/X瞬』":            6,
-		"明喻『像一/仿佛/如同/宛如』":        6,
+		"矫正句『不是…(而)是…』":       6,
+		"计时量词『X息/X瞬』":         6,
+		"明喻『像一/仿佛/如同/宛如』":     6,
 		"沉默节拍『沉默了/没有说话/没有回头』": 6,
 	}
 	for _, p := range s.Patterns {
@@ -46,7 +46,7 @@ func TestComputePatterns(t *testing.T) {
 }
 
 func TestComputeTopPhrasesWithStopwords(t *testing.T) {
-	// 「青云山巅」高频出现；「陆九渊」是角色名应被过滤
+	// Cụm địa danh xuất hiện tần suất cao nên được đào ra; tên nhân vật (stopword) phải bị lọc bỏ
 	line := "众人望向青云山巅，陆九渊负手而立。\n"
 	chapters := make([]string, 10)
 	for i := range chapters {
@@ -120,12 +120,12 @@ func TestComputeTitleFormats(t *testing.T) {
 	for i := range chapters {
 		chapters[i] = chapterWith("正文。")
 	}
-	// 混用 → 上报
+	// Dùng lẫn lộn → báo cáo
 	s := Compute(Input{Chapters: chapters, Titles: []string{"第一章 风起", "云涌", "第3章 雷动"}})
 	if s.TitleFormats == nil || s.TitleFormats.WithPrefix != 2 || s.TitleFormats.WithoutPrefix != 1 {
 		t.Errorf("title formats: %+v", s.TitleFormats)
 	}
-	// 统一 → 不上报
+	// Đồng nhất → không báo cáo
 	s = Compute(Input{Chapters: chapters, Titles: []string{"风起", "云涌"}})
 	if s.TitleFormats != nil {
 		t.Errorf("uniform titles should not report: %+v", s.TitleFormats)

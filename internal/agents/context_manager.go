@@ -5,9 +5,10 @@ import (
 
 	"github.com/voocel/agentcore"
 	corecontext "github.com/voocel/agentcore/context"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 )
 
-// contextManagerConfig 聚合 ContextManager 的全部配置参数。
+// contextManagerConfig gom toàn bộ tham số cấu hình của ContextManager.
 type contextManagerConfig struct {
 	Model            agentcore.ChatModel
 	ContextWindow    int
@@ -55,8 +56,8 @@ func newContextManager(cfg contextManagerConfig) *corecontext.ContextEngine {
 	return engine
 }
 
-// contextRewriteCallback 创建上下文重写的日志回调。
-// 新架构简化为只写 slog,不再写 runtime queue 和 UIEvent。
+// contextRewriteCallback tạo callback log cho việc ghi lại (rewrite) context.
+// Kiến trúc mới đơn giản hóa thành chỉ ghi slog, không còn ghi runtime queue và UIEvent.
 func contextRewriteCallback(agent string) func(corecontext.RewriteEvent) {
 	return func(ev corecontext.RewriteEvent) {
 		attrs := []any{
@@ -77,6 +78,6 @@ func contextRewriteCallback(agent string) func(corecontext.RewriteEvent) {
 				"duration_ms", info.Duration.Milliseconds(),
 			)
 		}
-		slog.Warn("上下文重写", attrs...)
+		slog.Warn(i18n.T("log.agent.context_rewrite"), attrs...)
 	}
 }

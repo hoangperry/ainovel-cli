@@ -6,11 +6,13 @@ import (
 	"fmt"
 
 	"github.com/voocel/agentcore/schema"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// SaveVolumeSummaryTool 保存卷级摘要，Editor 在卷结束时调用。
+// SaveVolumeSummaryTool lưu tóm tắt cấp quyển, Editor gọi khi quyển kết thúc.
 type SaveVolumeSummaryTool struct {
 	store *store.Store
 }
@@ -21,20 +23,23 @@ func NewSaveVolumeSummaryTool(store *store.Store) *SaveVolumeSummaryTool {
 
 func (t *SaveVolumeSummaryTool) Name() string { return "save_volume_summary" }
 func (t *SaveVolumeSummaryTool) Description() string {
-	return "保存卷级摘要（长篇模式，卷结束时调用）"
+	return contentlang.Pick(
+		"保存卷级摘要（长篇模式，卷结束时调用）",
+		"Lưu tóm tắt cấp quyển (chế độ truyện dài, gọi khi kết thúc quyển)",
+	)
 }
-func (t *SaveVolumeSummaryTool) Label() string { return "保存卷摘要" }
+func (t *SaveVolumeSummaryTool) Label() string { return i18n.T("ui.tool.save_volume_summary.label") }
 
-// 写工具，禁止并发。
+// Tool ghi, cấm song song.
 func (t *SaveVolumeSummaryTool) ReadOnly(_ json.RawMessage) bool        { return false }
 func (t *SaveVolumeSummaryTool) ConcurrencySafe(_ json.RawMessage) bool { return false }
 
 func (t *SaveVolumeSummaryTool) Schema() map[string]any {
 	return schema.Object(
-		schema.Property("volume", schema.Int("卷号")).Required(),
-		schema.Property("title", schema.String("卷标题")).Required(),
-		schema.Property("summary", schema.String("卷摘要（500字以内）")).Required(),
-		schema.Property("key_events", schema.Array("卷内关键事件", schema.String(""))).Required(),
+		schema.Property("volume", schema.Int(contentlang.Pick("卷号", "Số quyển"))).Required(),
+		schema.Property("title", schema.String(contentlang.Pick("卷标题", "Tiêu đề quyển"))).Required(),
+		schema.Property("summary", schema.String(contentlang.Pick("卷摘要（500字以内）", "Tóm tắt quyển (trong 500 chữ)"))).Required(),
+		schema.Property("key_events", schema.Array(contentlang.Pick("卷内关键事件", "Sự kiện then chốt trong quyển"), schema.String(""))).Required(),
 	)
 }
 

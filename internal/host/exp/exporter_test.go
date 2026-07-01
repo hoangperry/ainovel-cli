@@ -8,11 +8,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// newTestStore 构造一个 t.TempDir() 之上的最小 store，已写入 1..n 章终稿与 progress。
+// TestMain ghim trục nội dung về "zh" cho toàn bộ test package exp: các assertion dưới đây
+// kiểm tra nhãn xuất bản byte-identical với bản gốc tiếng Trung (第 N 章 / 第 N 卷 / 目录 / 封面).
+// Mặc định runtime là "vi"; cố định "zh" ở đây để test xác nhận nhánh original.
+func TestMain(m *testing.M) {
+	contentlang.Set("zh")
+	os.Exit(m.Run())
+}
+
+// newTestStore dựng một store tối thiểu trên t.TempDir(), đã ghi bản cuối chương 1..n và progress.
 func newTestStore(t *testing.T, novelName string, completed []int) (*store.Store, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -70,13 +79,13 @@ func TestRun_HappyPath_DefaultsToNovelDir(t *testing.T) {
 			t.Errorf("output missing %q\nfull:\n%s", want, text)
 		}
 	}
-	// premise 不进导出（创作蓝图，非读者内容）
+	// premise không vào export (bản thiết kế sáng tác, không phải nội dung cho độc giả)
 	if strings.Contains(text, "光与影的故事。") {
 		t.Errorf("premise must not appear in export:\n%s", text)
 	}
 }
 
-// TestRun_PremiseNotExported 端到端钉死：premise.md 存在也不进导出，书名保留（issue #27）。
+// TestRun_PremiseNotExported chốt chặt đầu-cuối: premise.md có tồn tại cũng không vào export, tên sách được giữ lại (issue #27).
 func TestRun_PremiseNotExported(t *testing.T) {
 	s, _ := newTestStore(t, "光斑", []int{1})
 	if err := s.Outline.SavePremise("# 光斑\n## 目标读者\n不该出现的创作蓝图。"); err != nil {
@@ -117,11 +126,11 @@ func TestRun_ExistingFile_NoOverwrite(t *testing.T) {
 	if err == nil {
 		t.Fatal("expect error when target exists and !Overwrite")
 	}
-	if !strings.Contains(err.Error(), "已存在") {
+	if !strings.Contains(err.Error(), "đã tồn tại") {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	// 加 Overwrite 应成功
+	// Thêm Overwrite thì phải thành công
 	res, err := Run(context.Background(), Deps{Store: s}, Options{OutPath: target, Overwrite: true})
 	if err != nil {
 		t.Fatalf("Overwrite Run: %v", err)
@@ -189,7 +198,7 @@ func TestInferFormat(t *testing.T) {
 		{"book.epub", FormatEPUB, false},
 		{"book.EPUB", FormatEPUB, false},
 		{"/abs/path/x.epub", FormatEPUB, false},
-		{"book", FormatTXT, false}, // 无后缀按 TXT
+		{"book", FormatTXT, false}, // không có phần mở rộng thì theo TXT
 		{"book.dat", "", true},
 		{"book.pdf", "", true},
 	}
@@ -232,7 +241,7 @@ func TestRun_EPUB_FromExtension(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	// EPUB 是 zip，前 4 字节 PK 头
+	// EPUB là zip, 4 byte đầu là header PK
 	if len(data) < 4 || string(data[:2]) != "PK" {
 		t.Errorf("output does not look like a zip: %x", data[:min(8, len(data))])
 	}
@@ -256,7 +265,7 @@ func TestRun_UnknownExtension(t *testing.T) {
 	if err == nil {
 		t.Fatal("expect error for unknown extension")
 	}
-	if !strings.Contains(err.Error(), "扩展名") {
+	if !strings.Contains(err.Error(), "đuôi mở rộng") {
 		t.Errorf("error should mention extension: %v", err)
 	}
 }

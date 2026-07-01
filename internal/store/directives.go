@@ -5,26 +5,27 @@ import (
 	"os"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 )
 
-// maxDirectives 是长效指令的容量上限：防止挂机数月后信封拖着一长串历史干预
-// （大信封撑上下文的变体）。超限由 coordinator 裁定先 remove 合并旧要求。
+// maxDirectives là giới hạn dung lượng của chỉ thị dài hạn: tránh việc sau nhiều tháng chạy nền, envelope kéo theo một chuỗi dài can thiệp lịch sử
+// (biến thể envelope lớn làm phình context). Khi vượt giới hạn, coordinator quyết định remove gộp các yêu cầu cũ trước.
 const maxDirectives = 20
 
-// DirectivesStore 管理用户长效创作指令（meta/user_directives.json）。
+// DirectivesStore quản lý chỉ thị sáng tác dài hạn của người dùng (meta/user_directives.json).
 type DirectivesStore struct{ io *IO }
 
 func NewDirectivesStore(io *IO) *DirectivesStore { return &DirectivesStore{io: io} }
 
-// Load 读取全部长效指令。文件不存在时返回空列表。
+// Load đọc toàn bộ chỉ thị dài hạn. Trả về danh sách rỗng khi file không tồn tại.
 func (s *DirectivesStore) Load() ([]domain.UserDirective, error) {
 	s.io.mu.RLock()
 	defer s.io.mu.RUnlock()
 	return s.loadUnlocked()
 }
 
-// Add 追加一条长效指令并返回更新后的全量列表。
-// Text 与已有条目完全相同时不重复追加（幂等）；超过容量上限时返回错误。
+// Add thêm một chỉ thị dài hạn và trả về danh sách đầy đủ sau cập nhật.
+// Khi Text trùng hoàn toàn với mục đã có thì không thêm lặp (idempotent); trả về lỗi khi vượt giới hạn dung lượng.
 func (s *DirectivesStore) Add(d domain.UserDirective) ([]domain.UserDirective, error) {
 	var list []domain.UserDirective
 	err := s.io.WithWriteLock(func() error {
@@ -39,7 +40,7 @@ func (s *DirectivesStore) Add(d domain.UserDirective) ([]domain.UserDirective, e
 			}
 		}
 		if len(existing) >= maxDirectives {
-			return fmt.Errorf("长效指令已达上限 %d 条，请先用 remove 删除或合并旧要求再添加", maxDirectives)
+			return fmt.Errorf(i18n.T("store.directives.limit_reached"), maxDirectives)
 		}
 		list = append(existing, d)
 		return s.io.WriteJSONUnlocked("meta/user_directives.json", list)
@@ -50,7 +51,7 @@ func (s *DirectivesStore) Add(d domain.UserDirective) ([]domain.UserDirective, e
 	return list, nil
 }
 
-// Remove 按 1-based 序号删除一条长效指令并返回更新后的全量列表。
+// Remove xóa một chỉ thị dài hạn theo số thứ tự 1-based và trả về danh sách đầy đủ sau cập nhật.
 func (s *DirectivesStore) Remove(index int) ([]domain.UserDirective, error) {
 	var list []domain.UserDirective
 	err := s.io.WithWriteLock(func() error {
@@ -59,7 +60,7 @@ func (s *DirectivesStore) Remove(index int) ([]domain.UserDirective, error) {
 			return err
 		}
 		if index < 1 || index > len(existing) {
-			return fmt.Errorf("序号 %d 超出范围（当前共 %d 条）", index, len(existing))
+			return fmt.Errorf(i18n.T("store.directives.index_out_of_range"), index, len(existing))
 		}
 		list = append(existing[:index-1], existing[index:]...)
 		return s.io.WriteJSONUnlocked("meta/user_directives.json", list)

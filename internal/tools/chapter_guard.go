@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/errs"
 	"github.com/voocel/ainovel-cli/internal/store"
@@ -29,7 +30,8 @@ func EnsureChapterExpanded(st *store.Store, chapter int) error {
 	if boundary != nil {
 		return nil
 	}
-	return fmt.Errorf(
-		"第 %d 章不在分层大纲范围内：写作必须先 expand_arc 扩展弧或 append_volume 追加卷；若全书已完结请调 save_foundation type=complete_book: %w",
-		chapter, errs.ErrToolPrecondition)
+	return fmt.Errorf("%s: %w", contentlang.Pick(
+		fmt.Sprintf("第 %d 章不在分层大纲范围内：写作必须先 expand_arc 扩展弧或 append_volume 追加卷；若全书已完结请调 save_foundation type=complete_book", chapter),
+		fmt.Sprintf("Chương %d không nằm trong phạm vi dàn ý phân tầng: viết phải expand_arc mở rộng cung hoặc append_volume thêm quyển trước; nếu toàn bộ truyện đã hoàn kết hãy gọi save_foundation type=complete_book", chapter),
+	), errs.ErrToolPrecondition)
 }

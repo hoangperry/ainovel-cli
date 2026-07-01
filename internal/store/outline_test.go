@@ -25,7 +25,7 @@ func setupLayered(t *testing.T, volumes []domain.VolumeOutline) *Store {
 }
 
 func TestCheckArcBoundaryNeedsNewVolume(t *testing.T) {
-	// 只有 1 卷 1 弧 1 章，且非 Final → 应触发 NeedsNewVolume
+	// chỉ có 1 quyển 1 cung 1 chương, và không phải Final → phải kích hoạt NeedsNewVolume
 	s := setupLayered(t, []domain.VolumeOutline{{
 		Index: 1, Title: "第一卷", Theme: "起步",
 		Arcs: []domain.ArcOutline{{
@@ -34,7 +34,7 @@ func TestCheckArcBoundaryNeedsNewVolume(t *testing.T) {
 		}},
 	}})
 
-	b, err := s.Outline.CheckArcBoundary(1) // 第 1 章 = 弧/卷最后一章
+	b, err := s.Outline.CheckArcBoundary(1) // chương 1 = chương cuối của cung/quyển
 	if err != nil {
 		t.Fatalf("CheckArcBoundary: %v", err)
 	}
@@ -53,8 +53,8 @@ func TestCheckArcBoundaryNeedsNewVolume(t *testing.T) {
 }
 
 func TestCheckArcBoundaryLastVolumeRequiresDecision(t *testing.T) {
-	// 单卷最后一章 → 触发 NeedsNewVolume，让 Router 让架构师二选一：
-	// append_volume 续写 / complete_book 收尾。
+	// chương cuối của quyển đơn → kích hoạt NeedsNewVolume, để Router cho Architect chọn một trong hai:
+	// append_volume viết tiếp / complete_book kết thúc.
 	s := setupLayered(t, []domain.VolumeOutline{{
 		Index: 1, Title: "唯一卷", Theme: "主题",
 		Arcs: []domain.ArcOutline{{
@@ -76,7 +76,7 @@ func TestCheckArcBoundaryLastVolumeRequiresDecision(t *testing.T) {
 }
 
 func TestCheckArcBoundaryNextArcInSameVolume(t *testing.T) {
-	// 2 弧：第 1 弧结束应指向第 2 弧，不触发 NeedsNewVolume
+	// 2 cung: kết thúc cung 1 phải trỏ tới cung 2, không kích hoạt NeedsNewVolume
 	s := setupLayered(t, []domain.VolumeOutline{{
 		Index: 1, Title: "第一卷", Theme: "起步",
 		Arcs: []domain.ArcOutline{
@@ -123,12 +123,12 @@ func TestAppendVolumeValidation(t *testing.T) {
 		}},
 	}
 
-	// 正常追加应成功
+	// thêm bình thường phải thành công
 	if err := s.AppendVolume(validVol); err != nil {
 		t.Fatalf("AppendVolume valid: %v", err)
 	}
 
-	// Index 不递增 → 失败
+	// Index không tăng → thất bại
 	if err := s.AppendVolume(domain.VolumeOutline{
 		Index: 1, Title: "重复", Theme: "x",
 		Arcs: []domain.ArcOutline{{Index: 1, Title: "弧", Goal: "g", Chapters: []domain.OutlineEntry{{Title: "ch", CoreEvent: "e", Hook: "h"}}}},
@@ -136,12 +136,12 @@ func TestAppendVolumeValidation(t *testing.T) {
 		t.Fatal("expected error for non-increasing index")
 	}
 
-	// 无弧 → 失败
+	// không có cung → thất bại
 	if err := s.AppendVolume(domain.VolumeOutline{Index: 3, Title: "空", Theme: "x"}); err == nil {
 		t.Fatal("expected error for volume with no arcs")
 	}
 
-	// 首弧无章节 → 失败
+	// cung đầu không có chương → thất bại
 	if err := s.AppendVolume(domain.VolumeOutline{
 		Index: 3, Title: "骨架", Theme: "x",
 		Arcs: []domain.ArcOutline{{Index: 1, Title: "弧", Goal: "g", EstimatedChapters: 10}},
@@ -150,9 +150,9 @@ func TestAppendVolumeValidation(t *testing.T) {
 	}
 }
 
-// 注：原先用 Final 卷拒绝 append 的语义已下沉到 save_foundation 层（Phase=Complete 拒绝），
-// 见 save_foundation_test.go::TestSaveFoundationAppendVolumeRejectsAfterComplete。
-// store 层只保留结构性校验（Index 递增 / 首弧含章节等）。
+// Lưu ý: ngữ nghĩa trước đây dùng quyển Final để từ chối append đã được hạ xuống tầng save_foundation (Phase=Complete từ chối),
+// xem save_foundation_test.go::TestSaveFoundationAppendVolumeRejectsAfterComplete.
+// tầng store chỉ giữ lại kiểm tra cấu trúc (Index tăng dần / cung đầu có chương, v.v.).
 
 func TestSaveAndLoadCompass(t *testing.T) {
 	s := NewStore(t.TempDir())
@@ -160,12 +160,12 @@ func TestSaveAndLoadCompass(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	// 空 direction 应失败
+	// direction rỗng phải thất bại
 	if err := s.Outline.SaveCompass(domain.StoryCompass{EstimatedScale: "3 卷"}); err == nil {
 		t.Fatal("expected error for empty ending_direction")
 	}
 
-	// 正常保存
+	// lưu bình thường
 	compass := domain.StoryCompass{
 		EndingDirection: "主角面对最终抉择",
 		OpenThreads:     []string{"线索A", "关系B"},

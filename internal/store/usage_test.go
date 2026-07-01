@@ -9,7 +9,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/domain"
 )
 
-// TestUsageStore_LoadMissing 验证文件不存在时返回 (nil, nil)，由调用方走 replay。
+// TestUsageStore_LoadMissing xác minh trả về (nil, nil) khi file không tồn tại, để bên gọi chạy replay.
 func TestUsageStore_LoadMissing(t *testing.T) {
 	dir := t.TempDir()
 	us := NewUsageStore(newIO(dir))
@@ -23,7 +23,7 @@ func TestUsageStore_LoadMissing(t *testing.T) {
 	}
 }
 
-// TestUsageStore_RoundTrip 写入再读取，验证累计数据原样回来。
+// TestUsageStore_RoundTrip ghi rồi đọc lại, xác minh dữ liệu tích lũy trở về nguyên vẹn.
 func TestUsageStore_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	us := NewUsageStore(newIO(dir))
@@ -64,13 +64,13 @@ func TestUsageStore_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestUsageStore_LoadSchemaMismatch 验证未来 schema 升级时旧文件被丢弃（让 host 走 replay 重建），
-// 不会把不兼容的字段错误地塞回 tracker。
+// TestUsageStore_LoadSchemaMismatch xác minh khi schema nâng cấp trong tương lai thì file cũ bị loại bỏ (để Host chạy replay dựng lại),
+// không nhồi nhầm các trường không tương thích trở lại tracker.
 func TestUsageStore_LoadSchemaMismatch(t *testing.T) {
 	dir := t.TempDir()
 	us := NewUsageStore(newIO(dir))
 
-	// 手写一份 schema=0 的旧数据
+	// viết tay một bộ dữ liệu cũ schema=0
 	raw, err := json.Marshal(map[string]any{
 		"schema":  0,
 		"overall": map[string]any{"input": 999},

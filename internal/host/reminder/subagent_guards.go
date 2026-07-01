@@ -7,29 +7,31 @@ import (
 	"sync/atomic"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// subagentMaxConsecutiveBlocks 连续阻拦 N 次后升级为终止，避免弱模型死循环。
+// subagentMaxConsecutiveBlocks chặn liên tiếp N lần thì nâng thành kết thúc, tránh model yếu rơi vào vòng lặp chết.
 const subagentMaxConsecutiveBlocks = 3
 
-// hardStopReasons 是无法用催促消息恢复的 provider 端拒答原因。注入
-// "必须 commit" 对它们无效，反而每次产生一次完整 LLM 调用的 token 消耗，
-// 并最终升级 escalate 后让 coordinator 重派整个 SubAgent，叠加多倍浪费
-// （实测 ch02 撞 safety 时一次写章产生 3 次重派 17 次 LLM 调用、命中率
-// 从 50% 跌到 2.8%）。
+// hardStopReasons là các lý do từ chối trả lời phía provider mà không thể khôi phục bằng tin nhắn thúc giục. Chèn
+// "phải commit" với chúng vô hiệu, ngược lại mỗi lần tốn token của một lần gọi LLM đầy đủ,
+// và cuối cùng sau khi escalate khiến coordinator phái lại toàn bộ SubAgent, cộng dồn lãng phí gấp nhiều lần
+// (đo thực tế ch02 đụng safety thì một lần viết chương sinh 3 lần phái lại 17 lần gọi LLM, tỉ lệ trúng
+// tụt từ 50% xuống 2.8%).
 //
-// 注意 StopReasonError / StopReasonAborted 不需要列入：agentcore 在
-// loop.go 收到这两种 stop reason 时直接终止 run，根本不会调用 StopGuard。
-// 这里只列那些会真正走到 StopGuard 的 provider 拒答语义。
+// Lưu ý StopReasonError / StopReasonAborted không cần liệt kê: agentcore khi nhận hai stop reason này
+// ở loop.go thì kết thúc run ngay, hoàn toàn không gọi StopGuard.
+// Ở đây chỉ liệt kê các ngữ nghĩa từ chối trả lời của provider thực sự đi tới StopGuard.
 var hardStopReasons = map[agentcore.StopReason]struct{}{
 	"safety":         {},
 	"content_filter": {},
 }
 
-// newCheckpointDeltaGuard 构造一个 StopGuard：
-// 在 baseline 之后若未出现指定 step 的 checkpoint，则拒绝 end_turn。
-// baseline 由调用方在 factory 时刻捕获，保证 per-run 语义正确。
+// newCheckpointDeltaGuard dựng một StopGuard:
+// sau baseline nếu chưa xuất hiện checkpoint của step được chỉ định thì từ chối end_turn.
+// baseline được caller bắt tại thời điểm factory, đảm bảo ngữ nghĩa per-run đúng.
 func newCheckpointDeltaGuard(st *store.Store, agentName string, requiredSteps []string, blockMsg string) agentcore.StopGuard {
 	var baseline int64
 	if cp := st.Checkpoints.LatestGlobal(); cp != nil {
@@ -41,14 +43,14 @@ func newCheckpointDeltaGuard(st *store.Store, agentName string, requiredSteps []
 	}
 	var consecutive atomic.Int32
 	return func(_ context.Context, info agentcore.StopInfo) agentcore.StopDecision {
-		// 不可恢复错误：直接升级，不浪费一次催促。
+		// Lỗi không thể khôi phục: nâng cấp ngay, không phí một lần thúc giục.
 		if _, hard := hardStopReasons[info.Message.StopReason]; hard {
-			slog.Error("subagent stop_guard 检测到不可恢复停机，立即升级",
+			slog.Error(i18n.T("log.reminder.subagent_unrecoverable_escalate"),
 				"module", "host.reminder", "agent", agentName,
 				"turn", info.TurnIndex, "stop_reason", info.Message.StopReason)
 			return agentcore.StopDecision{Allow: false, Escalate: true}
 		}
-		// 倒序扫描：新 checkpoint 在尾部，遇到 <= baseline 即可 break。
+		// Quét ngược: checkpoint mới ở cuối, gặp <= baseline là có thể break.
 		all := st.Checkpoints.All()
 		for i := len(all) - 1; i >= 0; i-- {
 			cp := all[i]
@@ -62,54 +64,54 @@ func newCheckpointDeltaGuard(st *store.Store, agentName string, requiredSteps []
 		}
 		n := consecutive.Add(1)
 		if n > subagentMaxConsecutiveBlocks {
-			slog.Error("subagent stop_guard 连续阻拦超限，升级为终止",
+			slog.Error(i18n.T("log.reminder.subagent_block_limit_escalate"),
 				"module", "host.reminder", "agent", agentName, "turn", info.TurnIndex, "consecutive", n)
 			return agentcore.StopDecision{Allow: false, Escalate: true}
 		}
-		slog.Warn("subagent stop_guard 拦截 end_turn",
+		slog.Warn(i18n.T("log.reminder.subagent_block_end_turn"),
 			"module", "host.reminder", "agent", agentName, "turn", info.TurnIndex, "consecutive", n)
 		return agentcore.StopDecision{Allow: false, InjectMessage: blockMsg}
 	}
 }
 
-// NewWriterStopGuard 要求 writer 本轮至少产生一次成功的 commit_chapter。
+// NewWriterStopGuard yêu cầu writer trong vòng này tạo ra ít nhất một commit_chapter thành công.
 func NewWriterStopGuard(st *store.Store) agentcore.StopGuard {
 	return newCheckpointDeltaGuard(st, "writer",
 		[]string{"commit"},
-		"你必须调用 commit_chapter 提交本章后才能结束。draft_chapter 只是保存草稿，不算完成。",
+		contentlang.Pick("你必须调用 commit_chapter 提交本章后才能结束。draft_chapter 只是保存草稿，不算完成。", "Bạn phải gọi commit_chapter để nộp chương này thì mới được kết thúc. draft_chapter chỉ lưu bản nháp, không tính là hoàn thành."),
 	)
 }
 
-// NewArchitectStopGuard 要求 architect 本轮至少落盘一次 save_foundation。
+// NewArchitectStopGuard yêu cầu architect trong vòng này ghi xuống ít nhất một save_foundation.
 func NewArchitectStopGuard(st *store.Store) agentcore.StopGuard {
 	return newCheckpointDeltaGuard(st, "architect",
 		[]string{
 			"premise", "outline", "layered_outline", "characters", "world_rules",
 			"expand_arc", "append_volume", "update_compass", "complete_book",
 		},
-		"你必须调用 save_foundation 将产出落盘后才能结束。只输出 Markdown/JSON 文字等于丢失。",
+		contentlang.Pick("你必须调用 save_foundation 将产出落盘后才能结束。只输出 Markdown/JSON 文字等于丢失。", "Bạn phải gọi save_foundation để ghi sản phẩm xuống đĩa thì mới được kết thúc. Chỉ xuất văn bản Markdown/JSON coi như mất."),
 	)
 }
 
-// NewEditorStopGuard 要求 editor 本轮落盘与"任务"匹配的产物后才能结束。
+// NewEditorStopGuard yêu cầu editor trong vòng này ghi xuống sản phẩm khớp với "nhiệm vụ" mới được kết thúc.
 //
-// 任务感知：被派去生成摘要时，仅 save_review（复核）不算完成——必须产出对应摘要。
-// 否则"被派生成弧摘要却先复核"的 editor 会满足旧的宽松判据提前结束，弧摘要永不落盘
-// （配合 dispatcher 去重哑火曾导致卷中骨架弧死循环，详见 outline-exhaustion-livelock）。
-// StopAfterTool 退出会绕过 StopGuard（loop.go），故 build.go 同步把 save_review 移出硬停，
-// 让复核后能继续走到摘要工具，再由本 guard 把关收尾。
+// Nhận biết nhiệm vụ: khi được phái đi tạo tóm tắt, chỉ save_review (rà soát) không tính là hoàn thành — phải tạo ra tóm tắt tương ứng.
+// Nếu không thì editor "bị phái tạo tóm tắt cung truyện nhưng lại rà soát trước" sẽ thỏa mãn tiêu chí lỏng cũ và kết thúc sớm, tóm tắt cung truyện không bao giờ được ghi xuống
+// (kết hợp với việc khử trùng của dispatcher bị câm từng gây vòng lặp chết ở cung truyện khung xương giữa quyển, xem outline-exhaustion-livelock).
+// Thoát bằng StopAfterTool sẽ né StopGuard (loop.go), nên build.go đồng bộ chuyển save_review ra khỏi hard stop,
+// để sau khi rà soát có thể đi tiếp tới tool tóm tắt, rồi giao guard này canh khâu kết.
 func NewEditorStopGuard(st *store.Store, task string) agentcore.StopGuard {
 	switch {
 	case strings.Contains(task, "save_volume_summary") || strings.Contains(task, "卷摘要"):
 		return newCheckpointDeltaGuard(st, "editor", []string{"volume_summary"},
-			"本次任务是生成卷摘要：你必须调用 save_volume_summary 落盘后才能结束，save_review 复核不算完成。")
+			contentlang.Pick("本次任务是生成卷摘要：你必须调用 save_volume_summary 落盘后才能结束，save_review 复核不算完成。", "Nhiệm vụ lần này là tạo tóm tắt quyển: bạn phải gọi save_volume_summary ghi xuống đĩa thì mới được kết thúc, save_review rà soát không tính là hoàn thành."))
 	case strings.Contains(task, "save_arc_summary") || strings.Contains(task, "弧摘要"):
 		return newCheckpointDeltaGuard(st, "editor", []string{"arc_summary"},
-			"本次任务是生成弧摘要：你必须调用 save_arc_summary 落盘后才能结束，save_review 复核不算完成。")
+			contentlang.Pick("本次任务是生成弧摘要：你必须调用 save_arc_summary 落盘后才能结束，save_review 复核不算完成。", "Nhiệm vụ lần này là tạo tóm tắt cung truyện: bạn phải gọi save_arc_summary ghi xuống đĩa thì mới được kết thúc, save_review rà soát không tính là hoàn thành."))
 	default:
-		// 评审或临时任务：任一审阅/摘要落盘即可（保持既有宽松行为）。
+		// Rà soát hoặc nhiệm vụ tạm thời: ghi xuống bất kỳ rà soát/tóm tắt nào cũng được (giữ hành vi lỏng sẵn có).
 		return newCheckpointDeltaGuard(st, "editor",
 			[]string{"review", "arc_summary", "volume_summary"},
-			"你必须调用 save_review / save_arc_summary / save_volume_summary 之一落盘结果后才能结束。")
+			contentlang.Pick("你必须调用 save_review / save_arc_summary / save_volume_summary 之一落盘结果后才能结束。", "Bạn phải gọi một trong save_review / save_arc_summary / save_volume_summary để ghi kết quả xuống đĩa thì mới được kết thúc."))
 	}
 }

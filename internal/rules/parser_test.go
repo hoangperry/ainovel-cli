@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// readFixture 读取 testdata 下的 fixture 文件；找不到则 t.Fatal。
+// readFixture đọc file fixture dưới testdata; không tìm thấy thì t.Fatal.
 func readFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	path := filepath.Join("testdata", name)
@@ -53,7 +53,7 @@ func TestParse_InvalidFrontMatter(t *testing.T) {
 	data := readFixture(t, "invalid-frontmatter.rules.md")
 	p := Parse("testdata/invalid-frontmatter.rules.md", SourceProject, data)
 
-	// 容错：结构化字段全空，但正文仍作为偏好
+	// dung lỗi: trường có cấu trúc toàn rỗng, nhưng nội dung vẫn làm preference
 	if !p.Structured.IsEmpty() {
 		t.Errorf("structured should be empty on parse_error, got %+v", p.Structured)
 	}
@@ -79,14 +79,14 @@ func TestParse_UnknownFields(t *testing.T) {
 	data := readFixture(t, "unknown-fields.rules.md")
 	p := Parse("testdata/unknown-fields.rules.md", SourceProject, data)
 
-	// 已知字段应正常加载
+	// trường đã biết phải load bình thường
 	if p.Structured.Genre != "xianxia" {
 		t.Errorf("genre=%q, want xianxia", p.Structured.Genre)
 	}
 	if p.Structured.ChapterWords == nil || p.Structured.ChapterWords.Min != 2000 {
 		t.Errorf("chapter_words=%+v, want {2000,4000}", p.Structured.ChapterWords)
 	}
-	// 未知字段进 conflicts
+	// trường lạ vào conflicts
 	unknowns := map[string]bool{}
 	for _, c := range p.Conflicts {
 		if c.Kind == ConflictUnknownField {
@@ -102,9 +102,9 @@ func TestParse_TypeErrors(t *testing.T) {
 	data := readFixture(t, "type-errors.rules.md")
 	p := Parse("testdata/type-errors.rules.md", SourceProject, data)
 
-	// 严格策略（Debug-First）：所有字段写错类型都丢弃字段并写 conflicts，不"帮用户猜"。
+	// chiến lược chặt chẽ (Debug-First): mọi trường viết sai kiểu đều bị loại bỏ và ghi conflicts, không "đoán giúp người dùng".
 
-	// genre: 42 是 int，严格判定为 type_error → 丢弃
+	// genre: 42 là int, phán định chặt là type_error → loại bỏ
 	if p.Structured.Genre != "" {
 		t.Errorf("genre should be discarded on type error (int instead of string), got %q", p.Structured.Genre)
 	}
@@ -114,22 +114,22 @@ func TestParse_TypeErrors(t *testing.T) {
 		t.Errorf("chapter_words should be nil on invalid_value, got %+v", p.Structured.ChapterWords)
 	}
 
-	// forbidden_chars: "should-be-list" → type_error（顶层）
+	// forbidden_chars: "should-be-list" → type_error (cấp đỉnh)
 	if len(p.Structured.ForbiddenChars) != 0 {
 		t.Errorf("forbidden_chars should be empty on type_error, got %v", p.Structured.ForbiddenChars)
 	}
 
-	// forbidden_phrases: [1, 2] → 每个元素都是 int，严格判定 → 全部丢弃 → 空 list
+	// forbidden_phrases: [1, 2] → mỗi phần tử đều là int, phán định chặt → loại bỏ hết → list rỗng
 	if len(p.Structured.ForbiddenPhrases) != 0 {
 		t.Errorf("forbidden_phrases should be empty on element type errors, got %v", p.Structured.ForbiddenPhrases)
 	}
 
-	// fatigue_words: true → 既非 map 也非 list → type_error 整体丢弃
+	// fatigue_words: true → không phải map cũng không phải list → type_error loại bỏ toàn bộ
 	if len(p.Structured.FatigueWords) != 0 {
 		t.Errorf("fatigue_words should be empty on type_error, got %+v", p.Structured.FatigueWords)
 	}
 
-	// 所有错误字段都应进 conflicts
+	// mọi trường lỗi đều phải vào conflicts
 	fields := map[string]bool{}
 	for _, c := range p.Conflicts {
 		fields[c.Field] = true
@@ -140,7 +140,7 @@ func TestParse_TypeErrors(t *testing.T) {
 			t.Errorf("expected conflict for %s, got fields=%v conflicts=%+v", f, fields, p.Conflicts)
 		}
 	}
-	// forbidden_phrases 的元素级冲突，字段名是 forbidden_phrases[0]/[1]
+	// conflict cấp phần tử của forbidden_phrases, tên trường là forbidden_phrases[0]/[1]
 	hasPhrasesElement := false
 	for _, c := range p.Conflicts {
 		if strings.HasPrefix(c.Field, "forbidden_phrases") {
@@ -151,14 +151,14 @@ func TestParse_TypeErrors(t *testing.T) {
 		t.Errorf("expected per-element conflict on forbidden_phrases, got %+v", p.Conflicts)
 	}
 
-	// 正文仍应注入
+	// nội dung vẫn phải được inject
 	if !strings.Contains(p.Preference, "类型错误") {
 		t.Errorf("preference should be parsed despite type errors; got %q", p.Preference)
 	}
 }
 
-// TestParse_FatigueWordsPartialInvalid 验证：fatigue_words map 中部分 key 阈值非法时，
-// 每个非法 key 都写 conflict，合法 key 正常保留。
+// TestParse_FatigueWordsPartialInvalid kiểm tra: khi một phần key trong map fatigue_words có ngưỡng không hợp lệ,
+// mỗi key không hợp lệ đều ghi conflict, key hợp lệ vẫn được giữ bình thường.
 func TestParse_FatigueWordsPartialInvalid(t *testing.T) {
 	content := []byte("---\nfatigue_words:\n" +
 		"  正常: 2\n" +
@@ -181,7 +181,7 @@ func TestParse_FatigueWordsPartialInvalid(t *testing.T) {
 		t.Errorf("non-int threshold should be dropped")
 	}
 
-	// 每个非法 key 都应有独立 conflict
+	// mỗi key không hợp lệ đều phải có conflict riêng
 	keys := map[string]bool{}
 	for _, c := range p.Conflicts {
 		keys[c.Field] = true
@@ -234,7 +234,7 @@ func TestParse_NoFrontMatter(t *testing.T) {
 	}
 }
 
-// TestParse_ChapterWordsObjectForm 验证 chapter_words 兼容 map 形式 {min, max}（除字符串外）。
+// TestParse_ChapterWordsObjectForm kiểm tra chapter_words tương thích dạng map {min, max} (ngoài chuỗi).
 func TestParse_ChapterWordsObjectForm(t *testing.T) {
 	content := []byte("---\nchapter_words:\n  min: 2500\n  max: 5500\n---\n")
 	p := Parse("inline", SourceProject, content)
@@ -246,8 +246,8 @@ func TestParse_ChapterWordsObjectForm(t *testing.T) {
 	}
 }
 
-// TestParse_ChapterWordsSingleValue 验证单值写法（裸数字 / 字符串）展开为 ±20% 区间。
-// 防回归 issue #41：用户凭直觉写单值，过去被静默丢弃、回落内置默认。
+// TestParse_ChapterWordsSingleValue kiểm tra cách viết giá trị đơn (số trần / chuỗi) mở rộng thành khoảng ±20%.
+// Chống hồi quy issue #41: người dùng viết giá trị đơn theo trực giác, trước đây bị loại bỏ im lặng, rơi về mặc định tích hợp.
 func TestParse_ChapterWordsSingleValue(t *testing.T) {
 	cases := []struct {
 		name             string
@@ -270,7 +270,7 @@ func TestParse_ChapterWordsSingleValue(t *testing.T) {
 	}
 }
 
-// TestParse_ChapterWordsInvalidRange 确认 min>max 被视为非法值。
+// TestParse_ChapterWordsInvalidRange xác nhận min>max bị coi là giá trị không hợp lệ.
 func TestParse_ChapterWordsInvalidRange(t *testing.T) {
 	content := []byte("---\nchapter_words: 6000-3000\n---\n")
 	p := Parse("inline", SourceProject, content)
@@ -288,7 +288,7 @@ func TestParse_ChapterWordsInvalidRange(t *testing.T) {
 	}
 }
 
-// TestParse_FrontMatterUnclosed 确认起始 --- 没闭合时整篇当正文处理。
+// TestParse_FrontMatterUnclosed xác nhận khi --- mở đầu không đóng thì xử lý cả bài như nội dung.
 func TestParse_FrontMatterUnclosed(t *testing.T) {
 	content := []byte("---\ngenre: xianxia\n# 没有闭合的 --- \n\n# 偏好\n\n- 内容\n")
 	p := Parse("inline", SourceProject, content)

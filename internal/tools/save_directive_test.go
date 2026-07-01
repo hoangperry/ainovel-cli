@@ -32,7 +32,7 @@ func TestSaveDirectiveAddAndRemove(t *testing.T) {
 	}
 	tool := NewSaveDirectiveTool(s)
 
-	// add：结果含带序号的全量列表
+	// add: kết quả chứa danh sách đầy đủ có đánh số thứ tự
 	payload := execDirective(t, tool, map[string]any{"action": "add", "text": "对话占比提高"})
 	execDirective(t, tool, map[string]any{"action": "add", "text": "标题只用中文"})
 
@@ -44,13 +44,13 @@ func TestSaveDirectiveAddAndRemove(t *testing.T) {
 	if first["text"] != "对话占比提高" || first["index"] != float64(1) {
 		t.Errorf("unexpected first entry: %v", first)
 	}
-	// 进度快照由工具从 Progress 读取，不依赖 LLM 传参：
-	// Progress.Init("test", 10) 后 NextChapter=1、TotalChapters=10
+	// Ảnh chụp tiến độ do tool đọc từ Progress, không phụ thuộc tham số do LLM truyền vào:
+	// sau Progress.Init("test", 10) thì NextChapter=1, TotalChapters=10
 	if first["at_chapter"] != float64(1) || first["at_total_chapters"] != float64(10) {
 		t.Errorf("entry should carry progress snapshot, got %v", first)
 	}
 
-	// remove：按序号删除
+	// remove: xóa theo số thứ tự
 	payload = execDirective(t, tool, map[string]any{"action": "remove", "index": 1})
 	directives, _ = payload["directives"].([]any)
 	if len(directives) != 1 {
@@ -67,11 +67,11 @@ func TestSaveDirectiveRejectsBadArgs(t *testing.T) {
 	tool := NewSaveDirectiveTool(s)
 
 	cases := []map[string]any{
-		{"action": "add"},                // 缺 text
-		{"action": "add", "text": "  "},  // 空白 text
-		{"action": "remove"},             // 缺 index
-		{"action": "remove", "index": 9}, // 越界
-		{"action": "merge", "text": "x"}, // 未知 action
+		{"action": "add"},                // thiếu text
+		{"action": "add", "text": "  "},  // text trống
+		{"action": "remove"},             // thiếu index
+		{"action": "remove", "index": 9}, // vượt biên
+		{"action": "merge", "text": "x"}, // action không xác định
 	}
 	for _, args := range cases {
 		raw, _ := json.Marshal(args)

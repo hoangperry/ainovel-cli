@@ -2,13 +2,22 @@ package flow
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 )
 
-// helper：构造一个处于 Writing 阶段、分层模式的 Progress。
+// TestMain ghim locale nội dung về "zh" cho toàn bộ test gói flow: các assertion đối chiếu
+// nguyên văn chuỗi zh của Task/Reason/FormatMessage, trong khi mặc định runtime là "vi".
+func TestMain(m *testing.M) {
+	contentlang.Set("zh")
+	os.Exit(m.Run())
+}
+
+// helper: dựng một Progress đang ở giai đoạn Writing, chế độ phân tầng.
 func writingProgress(completed []int, flow domain.FlowState) *domain.Progress {
 	return &domain.Progress{
 		Phase:             domain.PhaseWriting,
@@ -199,7 +208,7 @@ func TestRoute_NormalContinue(t *testing.T) {
 }
 
 func TestRoute_ArcEndNonLayeredSkipsBoundary(t *testing.T) {
-	// 非 Layered 模式即使 ArcBoundary 非 nil 也不走弧末分支
+	// Chế độ không Layered thì dù ArcBoundary khác nil cũng không đi nhánh cuối cung truyện
 	p := &domain.Progress{
 		Phase:             domain.PhaseWriting,
 		Flow:              domain.FlowWriting,
@@ -237,7 +246,7 @@ func contains(s, sub string) bool {
 }
 
 func TestDispatcher_TrackRepeat(t *testing.T) {
-	// 不需要真实 coordinator / store；trackRepeat 只读自己的缓存。
+	// Không cần coordinator / store thật; trackRepeat chỉ đọc cache của chính nó.
 	d := &Dispatcher{}
 	inst := &Instruction{Agent: "writer", Task: "写第 5 章", Reason: "续写"}
 	if got := d.trackRepeat(inst); got != 1 {
@@ -246,7 +255,7 @@ func TestDispatcher_TrackRepeat(t *testing.T) {
 	if got := d.trackRepeat(inst); got != 2 {
 		t.Fatalf("同 Agent+Task 重复下达应计 2，got %d", got)
 	}
-	// Reason 不同、Agent+Task 相同时视为同一指令继续累计
+	// Khi Reason khác nhưng Agent+Task giống thì coi là cùng một chỉ thị và tiếp tục cộng dồn
 	sameTaskDiffReason := &Instruction{Agent: "writer", Task: "写第 5 章", Reason: "弧末后继续"}
 	if got := d.trackRepeat(sameTaskDiffReason); got != 3 {
 		t.Fatalf("仅 Reason 不同应视为重复累计到 3，got %d", got)
@@ -284,13 +293,13 @@ func TestDispatcher_OnRepeatFiresOnceAtThreshold(t *testing.T) {
 
 	inst := &Instruction{Agent: "writer", Task: "写第 5 章"}
 	for range 6 {
-		d.trackRepeat(inst) // n=1..6：只在 n==3 时回调一次
+		d.trackRepeat(inst) // n=1..6: chỉ callback một lần khi n==3
 	}
 	if len(fired) != 1 || fired[0] != fmt.Sprintf("writer|写第 5 章|%d", repeatNotifyAt) {
 		t.Fatalf("应恰好在第 %d 次触发一次，got %v", repeatNotifyAt, fired)
 	}
 
-	// 键变更后重新武装：换任务再连续 3 次 → 再触发一次
+	// Tái vũ trang sau khi key đổi: đổi nhiệm vụ rồi lặp 3 lần liên tiếp → kích hoạt thêm một lần
 	other := &Instruction{Agent: "writer", Task: "写第 6 章"}
 	for range 3 {
 		d.trackRepeat(other)

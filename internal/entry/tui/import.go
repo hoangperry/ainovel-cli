@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,12 +14,14 @@ import (
 
 	"github.com/voocel/ainovel-cli/internal/host"
 	"github.com/voocel/ainovel-cli/internal/host/imp"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 )
 
-// importState 是 /import 命令运行期间的模态状态。
+// importState là trạng thái modal trong thời gian chạy lệnh /import.
 //
-// 模态在导入开始时创建，跟随事件流推进；完成或出错后保留在屏上等用户 Esc 关闭。
-// Esc 在运行中触发取消（ctx.Cancel），交由 runner 在下一事件点收尾。
+// Modal tạo lúc bắt đầu import, đi theo luồng sự kiện; xong hoặc lỗi thì giữ trên màn
+// chờ người dùng Esc đóng. Esc khi đang chạy kích hoạt hủy (ctx.Cancel), giao cho
+// runner thu dọn ở điểm sự kiện kế tiếp.
 type importState struct {
 	reqID      int
 	source     string
@@ -86,24 +89,24 @@ func (s *importState) refresh(contentW int) {
 	stageStyle := lipgloss.NewStyle().Foreground(colorAccent2)
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("导入外部小说"))
+	b.WriteString(titleStyle.Render(i18n.T("ui.import.title")))
 	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("源文件 "))
+	b.WriteString(dimStyle.Render(i18n.T("ui.import.source")))
 	b.WriteString(s.source)
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("开始 "))
+	b.WriteString(dimStyle.Render(i18n.T("ui.import.started")))
 	b.WriteString(formatReportTime(s.startedAt))
 	if !s.finishedAt.IsZero() {
-		b.WriteString(dimStyle.Render("  完成 "))
+		b.WriteString(dimStyle.Render(i18n.T("ui.import.finished")))
 		b.WriteString(formatReportTime(s.finishedAt))
 	}
 	b.WriteString("\n\n")
 
-	// 当前阶段行
-	b.WriteString(mutedStyle.Render("阶段 "))
+	// Dòng giai đoạn hiện tại
+	b.WriteString(mutedStyle.Render(i18n.T("ui.import.stage")))
 	b.WriteString(stageStyle.Render(string(s.stage)))
 	if s.total > 0 {
-		b.WriteString(mutedStyle.Render("  进度 "))
+		b.WriteString(mutedStyle.Render(i18n.T("ui.import.progress")))
 		if s.current > 0 {
 			b.WriteString(fmt.Sprintf("%d/%d", s.current, s.total))
 		} else {
@@ -112,10 +115,10 @@ func (s *importState) refresh(contentW int) {
 	}
 	b.WriteString("\n\n")
 
-	// 历史日志
-	b.WriteString(titleStyle.Render("流程日志"))
+	// Nhật ký lịch sử
+	b.WriteString(titleStyle.Render(i18n.T("ui.import.flow_log")))
 	b.WriteString(" ")
-	b.WriteString(dimStyle.Render(fmt.Sprintf("(%d 条)", len(s.history))))
+	b.WriteString(dimStyle.Render(i18n.Tf("ui.import.log_count", len(s.history))))
 	b.WriteString("\n")
 	for _, ln := range s.history {
 		b.WriteString("\n")
@@ -133,19 +136,19 @@ func (s *importState) refresh(contentW int) {
 		}
 	}
 
-	// 收尾提示
+	// Gợi ý thu dọn
 	b.WriteString("\n\n")
 	switch {
 	case !s.done:
-		b.WriteString(dimStyle.Render("Esc 取消导入"))
+		b.WriteString(dimStyle.Render(i18n.T("ui.import.esc_cancel")))
 	case s.err != nil:
-		b.WriteString(errStyle.Render("导入失败"))
+		b.WriteString(errStyle.Render(i18n.T("ui.import.failed")))
 		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("Esc 关闭面板"))
+		b.WriteString(dimStyle.Render(i18n.T("ui.import.esc_close")))
 	default:
-		b.WriteString(okStyle.Render("导入完成，正在自动接力续写"))
+		b.WriteString(okStyle.Render(i18n.T("ui.import.done_autocontinue")))
 		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("Esc 关闭面板查看进度"))
+		b.WriteString(dimStyle.Render(i18n.T("ui.import.esc_close_progress")))
 	}
 
 	s.viewport.SetContent(b.String())
@@ -168,8 +171,8 @@ func renderImportModal(width, height int, s *importState) string {
 		s.viewport.Height = boxH - 4
 	}
 
-	hint := "  ↑↓ 滚动 · Esc 取消/关闭"
-	modal := renderPaddedModalFrame(boxW, boxH, "外部小说导入", hint,
+	hint := i18n.T("ui.import.modal_hint")
+	modal := renderPaddedModalFrame(boxW, boxH, i18n.T("ui.import.modal_title"), hint,
 		strings.Split(s.viewport.View(), "\n"))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modal)
 }
@@ -198,15 +201,16 @@ func (m Model) handleImportKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// importEventMsg 单次 imp.Event 投递。
+// importEventMsg gửi một imp.Event đơn lẻ.
 type importEventMsg struct {
 	reqID int
 	ev    imp.Event
-	ch    <-chan imp.Event // 同一通道继续监听下一条
+	ch    <-chan imp.Event // cùng channel tiếp tục lắng nghe bản kế tiếp
 }
 
-// startImport 启动一次外部小说导入：解析参数 → 创建 modal state → 监听事件流。
-// width/height 用于初始化 viewport；cancel 函数挂在 state 上供 Esc 取消。
+// startImport khởi động một lần import tiểu thuyết ngoài: phân tích tham số → tạo
+// modal state → lắng nghe luồng sự kiện. width/height dùng để khởi tạo viewport;
+// hàm cancel gắn trên state cho Esc hủy.
 func startImport(rt *host.Host, reqID int, args []string, width, height int) (*importState, tea.Cmd, error) {
 	opts, err := parseImportArgs(args)
 	if err != nil {
@@ -232,26 +236,26 @@ func listenImportEvent(reqID int, ch <-chan imp.Event) tea.Cmd {
 	}
 }
 
-// parseImportArgs 解析 `/import <path> [from=N]` 形式参数。
+// parseImportArgs phân tích tham số dạng `/import <path> [from=N]`.
 func parseImportArgs(args []string) (imp.Options, error) {
 	if len(args) == 0 {
-		return imp.Options{}, fmt.Errorf("用法：/import <文件路径> [from=N]")
+		return imp.Options{}, errors.New(i18n.T("ui.import.usage"))
 	}
 	opts := imp.Options{SourcePath: args[0]}
 	for _, a := range args[1:] {
 		k, v, ok := strings.Cut(a, "=")
 		if !ok {
-			return imp.Options{}, fmt.Errorf("参数应为 key=value：%q", a)
+			return imp.Options{}, fmt.Errorf(i18n.T("ui.import.arg_kv"), a)
 		}
 		switch strings.ToLower(k) {
 		case "from":
 			n, err := strconv.Atoi(v)
 			if err != nil || n < 0 {
-				return imp.Options{}, fmt.Errorf("from 需为非负整数：%q", v)
+				return imp.Options{}, fmt.Errorf(i18n.T("ui.import.from_int"), v)
 			}
 			opts.ResumeFrom = n
 		default:
-			return imp.Options{}, fmt.Errorf("未知参数 %q（支持：from）", k)
+			return imp.Options{}, fmt.Errorf(i18n.T("ui.import.unknown_arg"), k)
 		}
 	}
 	return opts, nil

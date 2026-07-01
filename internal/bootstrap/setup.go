@@ -9,17 +9,18 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 	"github.com/voocel/ainovel-cli/internal/rules"
 	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
-// exampleConfig 是引导后写入 ~/.ainovel/config.example.jsonc 的带注释模板。
-// 单一数据源：直接嵌入同目录的 config.example.jsonc，避免与文档样本漂移。
+// exampleConfig là khuôn mẫu kèm comment ghi vào ~/.ainovel/config.example.jsonc sau khi setup.
+// Nguồn dữ liệu duy nhất: nhúng thẳng config.example.jsonc cùng thư mục, tránh trôi lệch với mẫu trong tài liệu.
 //
 //go:embed config.example.jsonc
 var exampleConfig string
 
-// NeedsSetup 检查是否需要首次引导（配置文件不存在时触发）。
+// NeedsSetup kiểm tra có cần setup lần đầu hay không (kích hoạt khi file cấu hình không tồn tại).
 func NeedsSetup(flagPath string) bool {
 	if flagPath != "" {
 		_, err := os.Stat(flagPath)
@@ -39,9 +40,9 @@ func NeedsSetup(flagPath string) bool {
 type setupProvider struct {
 	name           string
 	label          string
-	baseURL        string // 预填的 base_url
-	needType       bool   // 自定义代理需要额外问 type 和 base_url
-	apiKeyOptional bool   // true 表示 API Key 允许留空
+	baseURL        string // base_url điền sẵn
+	needType       bool   // proxy tuỳ biến cần hỏi thêm type và base_url
+	apiKeyOptional bool   // true nghĩa là API Key cho phép để trống
 }
 
 var setupProviders = []setupProvider{
@@ -58,16 +59,16 @@ var setupProviders = []setupProvider{
 	{name: "custom", label: "Custom Proxy", needType: true, apiKeyOptional: true},
 }
 
-// RunSetup 运行首次引导，返回生成的配置。
+// RunSetup chạy setup lần đầu, trả về cấu hình đã sinh.
 func RunSetup() (Config, error) {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).
-		Render("未检测到配置文件，开始初始化设置..."))
-	fmt.Fprintf(os.Stderr, "  配置文件路径：%s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(DefaultConfigPath()))
-	fmt.Fprintf(os.Stderr, "  完成后可随时编辑该文件调整高级设置。\n")
+		Render(i18n.T("setup.intro.detect")))
+	fmt.Fprintf(os.Stderr, i18n.T("setup.intro.config_path"), lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(DefaultConfigPath()))
+	fmt.Fprint(os.Stderr, i18n.T("setup.intro.edit_hint"))
 	fmt.Fprintln(os.Stderr)
 
-	// Step 1: 选择 Provider
+	// Step 1: Chọn Provider
 	sp, err := runProviderSelect()
 	if err != nil {
 		return Config{}, err
@@ -77,9 +78,9 @@ func RunSetup() (Config, error) {
 	var pc ProviderConfig
 	printStepDone("Provider", sp.label)
 
-	// 自定义代理：额外问名称和 API 协议类型
+	// Proxy tuỳ biến: hỏi thêm tên và loại giao thức API
 	if sp.needType {
-		providerName, err = runTextInput("Provider 名称", "my-proxy")
+		providerName, err = runTextInput(i18n.T("setup.prompt.provider_name"), "my-proxy")
 		if err != nil {
 			return Config{}, err
 		}
@@ -90,30 +91,30 @@ func RunSetup() (Config, error) {
 		pc.Type = providerType
 	}
 
-	// Step 2: 输入 API Key
+	// Step 2: Nhập API Key
 	var apiKey string
 	if sp.apiKeyOptional {
-		apiKey, err = runOptionalTextInput("[2/4] API Key（可留空）", "留空表示不使用 API Key")
+		apiKey, err = runOptionalTextInput(i18n.T("setup.step.apikey_optional"), i18n.T("setup.step.apikey_empty"))
 	} else {
-		apiKey, err = runTextInput("[2/4] API Key", "sk-xxx")
+		apiKey, err = runTextInput(i18n.T("setup.step.apikey"), "sk-xxx")
 	}
 	if err != nil {
 		return Config{}, err
 	}
 	pc.APIKey = apiKey
 	if apiKey == "" {
-		printStepDone("API Key", "未设置")
+		printStepDone("API Key", i18n.T("setup.value.apikey_unset"))
 	} else {
 		printStepDone("API Key", maskKey(apiKey))
 	}
 
-	// Step 3: Base URL（直接回车使用官方默认地址）
+	// Step 3: Base URL (nhấn Enter trực tiếp để dùng địa chỉ mặc định chính thức)
 	baseDefault := sp.baseURL
-	baseHint := "留空使用官方地址"
+	baseHint := i18n.T("setup.step.baseurl_hint")
 	if baseDefault != "" {
 		baseHint = baseDefault
 	}
-	baseURL, err := runTextInputWithDefault("[3/4] Base URL（直接回车使用默认，代理用户填写代理地址）", baseHint, baseDefault)
+	baseURL, err := runTextInputWithDefault(i18n.T("setup.step.baseurl"), baseHint, baseDefault)
 	if err != nil {
 		return Config{}, err
 	}
@@ -121,11 +122,11 @@ func RunSetup() (Config, error) {
 	if baseURL != "" {
 		printStepDone("Base URL", baseURL)
 	} else {
-		printStepDone("Base URL", "默认")
+		printStepDone("Base URL", i18n.T("setup.value.baseurl_default"))
 	}
 
-	// Step 4: 模型名（必填）
-	modelName, err := runTextInput("[4/4] 模型名称", "例如：gpt-4o / claude-sonnet-4 / gemini-2.5-pro")
+	// Step 4: Tên model (bắt buộc)
+	modelName, err := runTextInput(i18n.T("setup.step.model"), i18n.T("setup.step.model_hint"))
 	if err != nil {
 		return Config{}, err
 	}
@@ -139,25 +140,25 @@ func RunSetup() (Config, error) {
 		Style:     "default",
 	}
 
-	// 保存
+	// Lưu
 	path := DefaultConfigPath()
 	if err := SaveConfig(path, cfg); err != nil {
 		return cfg, fmt.Errorf("save config: %w", err)
 	}
 
-	// 生成注释模板
+	// Sinh khuôn mẫu kèm comment
 	saveExampleConfig()
 
-	// 全局偏好目录由启动流程（runWithConfig）统一创建，这里仅取路径用于提示
+	// Thư mục preference toàn cục do quy trình khởi động (runWithConfig) tạo thống nhất, ở đây chỉ lấy đường dẫn để hiển thị gợi ý
 	rulesDir := rules.DefaultHomeRulesDir()
 
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "%s 配置已保存到 %s\n",
+	fmt.Fprintf(os.Stderr, i18n.T("setup.saved"),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✓"), path)
-	fmt.Fprintf(os.Stderr, "  默认模型：%s\n", modelName)
-	fmt.Fprintln(os.Stderr, "  如需按角色配置不同模型，编辑配置文件即可。")
+	fmt.Fprintf(os.Stderr, i18n.T("setup.saved.default_model"), modelName)
+	fmt.Fprintln(os.Stderr, i18n.T("setup.saved.role_hint"))
 	if rulesDir != "" {
-		fmt.Fprintf(os.Stderr, "  全局写作偏好可放 %s 下的 .md 文件（见其中 README.txt）\n", rulesDir)
+		fmt.Fprintf(os.Stderr, i18n.T("setup.saved.rules_hint"), rulesDir)
 	}
 	fmt.Fprintln(os.Stderr)
 
@@ -172,7 +173,7 @@ func saveExampleConfig() {
 	_ = os.WriteFile(filepath.Join(dir, "config.example.jsonc"), []byte(exampleConfig), 0o644)
 }
 
-// printStepDone 打印一步完成的确认行。
+// printStepDone in ra dòng xác nhận một bước đã hoàn tất.
 func printStepDone(label, value string) {
 	fmt.Fprintf(os.Stderr, "  %s %s: %s\n",
 		lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✓"),
@@ -187,11 +188,11 @@ func maskKey(key string) string {
 	return key[:4] + "****" + key[len(key)-4:]
 }
 
-// ---------- TUI 组件 ----------
+// ---------- Thành phần TUI ----------
 
 func runProviderSelect() (setupProvider, error) {
 	m := setupSelectModel{
-		title: "[1/4] 选择 Provider",
+		title: i18n.T("setup.label.provider_select"),
 		items: setupProviders,
 	}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
@@ -206,16 +207,20 @@ func runProviderSelect() (setupProvider, error) {
 	return result.items[result.cursor], nil
 }
 
-var apiTypeOptions = []setupProvider{
-	{name: "openai", label: "OpenAI 兼容"},
-	{name: "anthropic", label: "Anthropic 兼容"},
-	{name: "gemini", label: "Gemini 兼容"},
+// apiTypeOptions xây danh sách loại giao thức API tại thời điểm gọi, để label
+// dịch theo locale đã set (không cố định lúc init khi locale chưa biết).
+func apiTypeOptions() []setupProvider {
+	return []setupProvider{
+		{name: "openai", label: i18n.T("setup.label.api_type_openai")},
+		{name: "anthropic", label: i18n.T("setup.label.api_type_anthropic")},
+		{name: "gemini", label: i18n.T("setup.label.api_type_gemini")},
+	}
 }
 
 func runTypeSelect() (string, error) {
 	m := setupSelectModel{
-		title: "API 协议类型",
-		items: apiTypeOptions,
+		title: i18n.T("setup.label.api_type"),
+		items: apiTypeOptions(),
 	}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	final, err := p.Run()
@@ -264,7 +269,7 @@ func runTextInputWithDefault(label, placeholder, defaultValue string) (string, e
 	return utils.CleanInputLine(result.value), nil
 }
 
-// ---------- 选择器 ----------
+// ---------- Bộ chọn ----------
 
 var (
 	setupCursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
@@ -316,17 +321,17 @@ func (m setupSelectModel) View() string {
 		}
 		b.WriteString(cursor + label + "\n")
 	}
-	b.WriteString(setupDimStyle.Render("\n  ↑↓ 选择  Enter 确认  Esc 取消"))
+	b.WriteString(setupDimStyle.Render(i18n.T("setup.select.help")))
 	return b.String()
 }
 
-// ---------- 文本输入 ----------
+// ---------- Nhập văn bản ----------
 
 type setupInputModel struct {
 	label        string
 	placeholder  string
-	defaultValue string // 直接回车时使用的默认值
-	allowEmpty   bool   // 允许直接输入空值
+	defaultValue string // Giá trị mặc định dùng khi nhấn Enter trực tiếp
+	allowEmpty   bool   // Cho phép nhập giá trị rỗng trực tiếp
 	value        string
 	cancelled    bool
 }
@@ -371,7 +376,7 @@ func (m setupInputModel) View() string {
 		b.WriteString(m.value)
 		b.WriteString(setupCursorStyle.Render("▌"))
 	}
-	b.WriteString(setupDimStyle.Render("  (Enter 确认, Esc 取消)"))
+	b.WriteString(setupDimStyle.Render(i18n.T("setup.input.help")))
 	b.WriteString("\n")
 	return b.String()
 }

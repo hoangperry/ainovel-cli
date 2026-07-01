@@ -168,7 +168,7 @@ func TestSaveReviewRejectsUnfinishedAffectedChapter(t *testing.T) {
 		t.Fatalf("Marshal: %v", err)
 	}
 
-	if _, err := tool.Execute(context.Background(), args); err == nil || !strings.Contains(err.Error(), "pending_rewrites 只能包含已完成章节") {
+	if _, err := tool.Execute(context.Background(), args); err == nil || !strings.Contains(err.Error(), "pending_rewrites") {
 		t.Fatalf("expected unfinished affected chapter rejection, got %v", err)
 	}
 	review, err := s.World.LoadReview(58)
@@ -187,9 +187,9 @@ func TestSaveReviewRejectsUnfinishedAffectedChapter(t *testing.T) {
 	}
 }
 
-// TestSaveReviewDerivesVerdictFromScore 验证：verdict 由 score 确定性推导，模型给的
-// 不一致 verdict（如 score=85 却填 warning）不再报错，而是被覆写成正确值（pass）。
-// 防回归 issue：弱模型 score/verdict 打架曾导致 save_review 反复失败。
+// TestSaveReviewDerivesVerdictFromScore kiểm chứng: verdict được suy ra xác định từ score, verdict
+// không nhất quán mà model đưa ra (như score=85 nhưng điền warning) không còn báo lỗi, mà bị ghi đè thành giá trị đúng (pass).
+// Chống hồi quy: model yếu khiến score/verdict đánh nhau từng làm save_review thất bại nhiều lần.
 func TestSaveReviewDerivesVerdictFromScore(t *testing.T) {
 	s := store.NewStore(t.TempDir())
 	if err := s.Init(); err != nil {
@@ -208,12 +208,12 @@ func TestSaveReviewDerivesVerdictFromScore(t *testing.T) {
 		"scope":   "chapter",
 		"dimensions": []map[string]any{
 			{"dimension": "consistency", "score": 85, "verdict": "pass", "comment": "一致"},
-			{"dimension": "character", "score": 82, "comment": "稳定"}, // 省略 verdict
+			{"dimension": "character", "score": 82, "comment": "稳定"}, // bỏ qua verdict
 			{"dimension": "pacing", "score": 78, "verdict": "warning", "comment": "略慢"},
 			{"dimension": "continuity", "score": 84, "verdict": "pass", "comment": "连贯"},
 			{"dimension": "foreshadow", "score": 80, "verdict": "pass", "comment": "正常"},
 			{"dimension": "hook", "score": 76, "verdict": "warning", "comment": "钩子一般"},
-			{"dimension": "aesthetic", "score": 85, "verdict": "warning", "comment": "语言成立"}, // 不一致：85 却填 warning
+			{"dimension": "aesthetic", "score": 85, "verdict": "warning", "comment": "语言成立"}, // không nhất quán: 85 nhưng điền warning
 		},
 		"issues":  []map[string]any{},
 		"verdict": "accept",
@@ -231,7 +231,7 @@ func TestSaveReviewDerivesVerdictFromScore(t *testing.T) {
 	if err != nil || review == nil {
 		t.Fatalf("LoadReview: %v", err)
 	}
-	// 85 → pass（覆写模型给的 warning）；82 省略 → pass。
+	// 85 → pass (ghi đè warning mà model đưa ra); 82 bỏ qua → pass.
 	if d := review.Dimension("aesthetic"); d == nil || d.Verdict != "pass" {
 		t.Fatalf("aesthetic verdict should be derived to pass, got %+v", d)
 	}

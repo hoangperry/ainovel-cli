@@ -69,7 +69,15 @@
   // },
 
   // 写作风格：default / suspense / fantasy / romance。
-  "style": "default"
+  "style": "default",
+
+  // Ngôn ngữ giao diện operator (TUI / lỗi / setup): vi | en. Mặc định vi.
+  // Có thể override bằng cờ --lang hoặc biến môi trường AINOVEL_LANG.
+  "ui_lang": "vi",
+
+  // Ngôn ngữ AI viết truyện: vi | en | original (original = giữ ngôn ngữ gốc của
+  // prompt, tức hành vi tiếng Trung hiện tại). Mặc định vi.
+  "output_lang": "vi"
 
   // 可选。显式指定上下文压缩使用的窗口大小。省略 / 0 = 按模型名自动解析
   //（registry 命中用真实窗口，未命中兜底 200k）。配了就优先用：既能给 registry

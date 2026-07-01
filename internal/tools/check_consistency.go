@@ -6,13 +6,15 @@ import (
 	"fmt"
 
 	"github.com/voocel/agentcore/schema"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/errs"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// CheckConsistencyTool 返回章节内容和全部状态数据，供 Agent 自行对照判断。
-// 纯 IO 工具：只负责加载数据，不注入指令。
+// CheckConsistencyTool trả về nội dung chương và toàn bộ dữ liệu trạng thái, để Agent tự đối chiếu phán định.
+// Tool IO thuần: chỉ chịu trách nhiệm nạp dữ liệu, không tiêm chỉ thị.
 type CheckConsistencyTool struct {
 	store *store.Store
 }
@@ -23,17 +25,20 @@ func NewCheckConsistencyTool(store *store.Store) *CheckConsistencyTool {
 
 func (t *CheckConsistencyTool) Name() string { return "check_consistency" }
 func (t *CheckConsistencyTool) Description() string {
-	return "加载已写草稿和对照数据（世界规则、伏笔、关系、别名、最近摘要），供你检查一致性。必须在 draft_chapter 之后调用"
+	return contentlang.Pick(
+		"加载已写草稿和对照数据（世界规则、伏笔、关系、别名、最近摘要），供你检查一致性。必须在 draft_chapter 之后调用",
+		"Nạp bản nháp đã viết cùng dữ liệu đối chiếu (quy tắc thế giới, phục bút, quan hệ, biệt danh, tóm tắt gần đây) để bạn kiểm tra tính nhất quán. Bắt buộc gọi sau draft_chapter",
+	)
 }
-func (t *CheckConsistencyTool) Label() string { return "一致性检查" }
+func (t *CheckConsistencyTool) Label() string { return i18n.T("ui.tool.check_consistency.label") }
 
-// 只读工具（仅追加 checkpoint 事件，不改状态），可被并发调度。
+// Tool chỉ đọc (chỉ thêm sự kiện checkpoint, không đổi trạng thái), có thể được điều phối song song.
 func (t *CheckConsistencyTool) ReadOnly(_ json.RawMessage) bool        { return true }
 func (t *CheckConsistencyTool) ConcurrencySafe(_ json.RawMessage) bool { return true }
 
 func (t *CheckConsistencyTool) Schema() map[string]any {
 	return schema.Object(
-		schema.Property("chapter", schema.Int("要检查的章节号")).Required(),
+		schema.Property("chapter", schema.Int(contentlang.Pick("要检查的章节号", "Số chương cần kiểm tra"))).Required(),
 	)
 }
 
@@ -50,7 +55,7 @@ func (t *CheckConsistencyTool) Execute(_ context.Context, args json.RawMessage) 
 
 	result := map[string]any{"chapter": a.Chapter}
 
-	// 章节内容
+	// Nội dung chương
 	content, wordCount, err := t.store.Drafts.LoadChapterContent(a.Chapter)
 	if err != nil {
 		return nil, fmt.Errorf("load chapter content: %w: %w", errs.ErrStoreRead, err)
@@ -61,7 +66,7 @@ func (t *CheckConsistencyTool) Execute(_ context.Context, args json.RawMessage) 
 	result["content"] = content
 	result["word_count"] = wordCount
 
-	// 对照数据：保留全局性的一致性检查数据，避免重复加载 novel_context 已有的窗口数据
+	// Dữ liệu đối chiếu: giữ lại dữ liệu kiểm tra nhất quán mang tính toàn cục, tránh nạp lại dữ liệu cửa sổ mà novel_context đã có
 	if rules, _ := t.store.World.LoadWorldRules(); len(rules) > 0 {
 		result["world_rules"] = rules
 	}

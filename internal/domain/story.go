@@ -1,12 +1,12 @@
 package domain
 
-// Novel 小说元信息。
+// Novel là metadata của tiểu thuyết.
 type Novel struct {
 	Name          string `json:"name"`
 	TotalChapters int    `json:"total_chapters"`
 }
 
-// OutlineEntry 大纲条目，对应一章。
+// OutlineEntry là mục dàn ý, tương ứng một chương.
 type OutlineEntry struct {
 	Chapter   int      `json:"chapter"`
 	Title     string   `json:"title"`
@@ -15,52 +15,52 @@ type OutlineEntry struct {
 	Scenes    []string `json:"scenes"`
 }
 
-// Character 角色档案。
+// Character là hồ sơ nhân vật.
 type Character struct {
 	Name        string   `json:"name"`
-	Aliases     []string `json:"aliases,omitempty"` // 别名/称号/绰号（如"废物少年"、"炎哥"）
+	Aliases     []string `json:"aliases,omitempty"` // bí danh/danh hiệu/biệt hiệu (như "thiếu niên phế vật", "Viêm ca")
 	Role        string   `json:"role"`
 	Description string   `json:"description"`
 	Arc         string   `json:"arc"`
 	Traits      []string `json:"traits"`
-	Tier        string   `json:"tier,omitempty"` // core / important / secondary / decorative（默认 important）
+	Tier        string   `json:"tier,omitempty"` // core / important / secondary / decorative (mặc định important)
 }
 
-// VolumeOutline 卷级大纲（长篇分层模式）。
+// VolumeOutline là dàn ý cấp quyển (chế độ phân tầng truyện dài).
 type VolumeOutline struct {
 	Index int          `json:"index"`
 	Title string       `json:"title"`
-	Theme string       `json:"theme"` // 本卷核心冲突/主题
+	Theme string       `json:"theme"` // xung đột/chủ đề cốt lõi của quyển này
 	Arcs  []ArcOutline `json:"arcs"`
 }
 
-// IsExpanded 判断卷是否已展开（有弧级结构）。
+// IsExpanded xác định quyển đã được mở rộng chưa (có cấu trúc cấp cung truyện).
 func (v *VolumeOutline) IsExpanded() bool { return len(v.Arcs) > 0 }
 
-// StoryCompass 终局方向指南针，替代固定的骨架卷列表。
-// Architect 在每次卷边界时可更新，允许故事方向随创作演化。
+// StoryCompass là la bàn hướng kết cục, thay cho danh sách quyển khung xương cố định.
+// Architect có thể cập nhật ở mỗi ranh giới quyển, cho phép hướng truyện tiến hóa theo quá trình sáng tác.
 type StoryCompass struct {
-	EndingDirection string   `json:"ending_direction"`          // 终局方向（主题性描述）
-	OpenThreads     []string `json:"open_threads,omitempty"`    // 活跃长线（需收束才能结局）
-	EstimatedScale  string   `json:"estimated_scale,omitempty"` // 模糊规模（如"预计 4-6 卷"）
-	LastUpdated     int      `json:"last_updated,omitempty"`    // 更新时的已完成章节数
+	EndingDirection string   `json:"ending_direction"`          // hướng kết cục (mô tả mang tính chủ đề)
+	OpenThreads     []string `json:"open_threads,omitempty"`    // các tuyến dài đang mở (cần thu gọn mới kết thúc được)
+	EstimatedScale  string   `json:"estimated_scale,omitempty"` // quy mô ước lượng (như "dự kiến 4-6 quyển")
+	LastUpdated     int      `json:"last_updated,omitempty"`    // số chương đã hoàn thành tại thời điểm cập nhật
 }
 
-// ArcOutline 弧级大纲。
+// ArcOutline là dàn ý cấp cung truyện.
 type ArcOutline struct {
-	Index             int            `json:"index"` // 卷内弧序号
+	Index             int            `json:"index"` // số thứ tự cung truyện trong quyển
 	Title             string         `json:"title"`
-	Goal              string         `json:"goal"`                         // 弧目标（起承转合）
-	EstimatedChapters int            `json:"estimated_chapters,omitempty"` // 骨架弧的预估章数（展开后清零）
+	Goal              string         `json:"goal"`                         // mục tiêu cung truyện (khởi-thừa-chuyển-hợp)
+	EstimatedChapters int            `json:"estimated_chapters,omitempty"` // số chương ước lượng của cung truyện khung xương (về 0 sau khi mở rộng)
 	Chapters          []OutlineEntry `json:"chapters"`
 }
 
-// IsExpanded 判断弧是否已展开（有详细章节）。
+// IsExpanded xác định cung truyện đã được mở rộng chưa (có chương chi tiết).
 func (a *ArcOutline) IsExpanded() bool { return len(a.Chapters) > 0 }
 
-// TotalChapters 计算分层大纲的当前规划总章数。
-// 已展开弧按真实章节数计，骨架弧按 EstimatedChapters 计。
-// Progress.TotalChapters 用它判断长篇上下文策略；真正可写章节仍来自 FlattenOutline。
+// TotalChapters tính tổng số chương theo kế hoạch hiện tại của dàn ý phân tầng.
+// Cung truyện đã mở rộng tính theo số chương thật, cung truyện khung xương tính theo EstimatedChapters.
+// Progress.TotalChapters dùng nó để phán định chiến lược context truyện dài; chương thực sự viết được vẫn đến từ FlattenOutline.
 func TotalChapters(volumes []VolumeOutline) int {
 	n := 0
 	for _, v := range volumes {
@@ -75,7 +75,7 @@ func TotalChapters(volumes []VolumeOutline) int {
 	return n
 }
 
-// FlattenOutline 将分层大纲展开为扁平章节列表，保持全局章节号连续。
+// FlattenOutline trải dàn ý phân tầng thành danh sách chương phẳng, giữ số chương toàn cục liên tục.
 func FlattenOutline(volumes []VolumeOutline) []OutlineEntry {
 	var result []OutlineEntry
 	ch := 1
@@ -91,9 +91,9 @@ func FlattenOutline(volumes []VolumeOutline) []OutlineEntry {
 	return result
 }
 
-// WorldRule 世界观规则条目。
+// WorldRule là mục quy tắc thế giới quan.
 type WorldRule struct {
 	Category string `json:"category"` // magic / technology / geography / society / other
-	Rule     string `json:"rule"`     // 规则描述
-	Boundary string `json:"boundary"` // 不可违反的边界
+	Rule     string `json:"rule"`     // mô tả quy tắc
+	Boundary string `json:"boundary"` // ranh giới không thể vi phạm
 }

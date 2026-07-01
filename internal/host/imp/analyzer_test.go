@@ -106,7 +106,7 @@ func TestPersistChapter_FullPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 准备 foundation：先用 ReverseFoundation+PersistFoundation 模拟 Phase 2 已完成
+	// Chuẩn bị foundation: trước hết dùng ReverseFoundation+PersistFoundation mô phỏng Phase 2 đã hoàn thành
 	fr := mustParse(t, validEnvelope, 2)
 	if err := PersistFoundation(context.Background(), st, domain.PlanningTierShort, fr); err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestPersistChapter_FullPipeline(t *testing.T) {
 	}
 	commitTool := tools.NewCommitChapterTool(st)
 	body := "林晚翻开匿名信，发现一行潦草字迹...\n\n（正文略，>500 字以让 LoadChapterContent 通过校验）"
-	body = strings.Repeat(body, 10) // 凑够字数
+	body = strings.Repeat(body, 10) // cho đủ số chữ
 
 	if err := PersistChapter(context.Background(), st, commitTool, 1, "初遇", body, a); err != nil {
 		t.Fatalf("PersistChapter: %v", err)
@@ -137,7 +137,7 @@ func TestPersistChapter_FullPipeline(t *testing.T) {
 		t.Errorf("foreshadow not persisted: %+v", hooks)
 	}
 
-	// 二次提交同一章应是幂等（commit_chapter.IsChapterCompleted 短路）
+	// Commit lần hai cùng một chương phải idempotent (commit_chapter.IsChapterCompleted đoản mạch)
 	if err := PersistChapter(context.Background(), st, commitTool, 1, "初遇", body, a); err != nil {
 		t.Errorf("re-import should be idempotent, got: %v", err)
 	}

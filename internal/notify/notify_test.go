@@ -24,7 +24,7 @@ func TestAllowsFilter(t *testing.T) {
 	if nilN.allows("run_end") {
 		t.Error("nil Notifier 应拦截一切")
 	}
-	nilN.Send(Notification{Kind: "run_end"}) // 不应 panic
+	nilN.Send(Notification{Kind: "run_end"}) // không được panic
 }
 
 func TestCommandChannelEnvAndStdin(t *testing.T) {
@@ -34,7 +34,7 @@ func TestCommandChannelEnvAndStdin(t *testing.T) {
 
 	n := New(`echo "$NOTIFY_KIND|$NOTIFY_LEVEL|$NOTIFY_TITLE|$NOTIFY_BODY" > `+envFile+` && cat > `+jsonFile, nil)
 	nt := Notification{Kind: "budget", Level: "warn", Title: "ainovel: 预算", Body: "已花费 $8.00"}
-	n.deliver(nt) // 同步调用以便断言
+	n.deliver(nt) // gọi đồng bộ để tiện assert
 
 	env, err := os.ReadFile(envFile)
 	if err != nil {

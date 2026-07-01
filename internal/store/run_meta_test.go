@@ -54,7 +54,7 @@ func TestAppendSteerEntry(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	// 首次追加（meta/run.json 不存在）
+	// thêm lần đầu (meta/run.json không tồn tại)
 	e1 := domain.SteerEntry{Input: "主角改成女性", Timestamp: "2026-03-07T10:01:00+08:00"}
 	if err := store.RunMeta.AppendSteerEntry(e1); err != nil {
 		t.Fatalf("AppendSteerEntry 1: %v", err)
@@ -68,7 +68,7 @@ func TestAppendSteerEntry(t *testing.T) {
 		t.Errorf("input mismatch: %s", meta.SteerHistory[0].Input)
 	}
 
-	// 追加第二条
+	// thêm mục thứ hai
 	e2 := domain.SteerEntry{Input: "加入反转", Timestamp: "2026-03-07T10:02:00+08:00"}
 	_ = store.RunMeta.AppendSteerEntry(e2)
 
@@ -128,7 +128,7 @@ func TestAppendSteerEntry_PreservesExistingMeta(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	// 先保存 RunMeta
+	// lưu RunMeta trước
 	_ = store.RunMeta.Save(domain.RunMeta{
 		StartedAt: "2026-03-07T10:00:00+08:00",
 		Provider:  "openrouter",
@@ -136,7 +136,7 @@ func TestAppendSteerEntry_PreservesExistingMeta(t *testing.T) {
 		Model:     "gpt-4o",
 	})
 
-	// 追加 Steer 不应覆盖其他字段
+	// thêm Steer không được ghi đè các trường khác
 	_ = store.RunMeta.AppendSteerEntry(domain.SteerEntry{Input: "test", Timestamp: "now"})
 
 	meta, _ := store.RunMeta.Load()
@@ -158,7 +158,7 @@ func TestInitRunMeta_PreservesHistory(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	// 先建立带历史的 RunMeta
+	// tạo trước RunMeta có lịch sử
 	_ = store.RunMeta.Save(domain.RunMeta{
 		StartedAt:    "old",
 		Provider:     "openai",
@@ -168,7 +168,7 @@ func TestInitRunMeta_PreservesHistory(t *testing.T) {
 		PendingSteer: "待处理",
 	})
 
-	// InitRunMeta 应保留 SteerHistory 和 PendingSteer
+	// InitRunMeta phải giữ lại SteerHistory và PendingSteer
 	_ = store.RunMeta.Init("suspense", "openrouter", "new-model")
 
 	meta, _ := store.RunMeta.Load()
@@ -193,7 +193,7 @@ func TestSetAndClearPendingSteer(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	// 设置 PendingSteer
+	// đặt PendingSteer
 	if err := store.RunMeta.SetPendingSteer("主角改成女性"); err != nil {
 		t.Fatalf("SetPendingSteer: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestSetAndClearPendingSteer(t *testing.T) {
 		t.Errorf("expected pending steer, got %s", meta.PendingSteer)
 	}
 
-	// 清除
+	// xóa
 	if err := store.RunMeta.ClearPendingSteer(); err != nil {
 		t.Fatalf("ClearPendingSteer: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestClearPendingSteer_Noop(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	// 空 meta 上调用不报错
+	// gọi trên meta rỗng không báo lỗi
 	if err := store.RunMeta.ClearPendingSteer(); err != nil {
 		t.Fatalf("ClearPendingSteer on empty: %v", err)
 	}

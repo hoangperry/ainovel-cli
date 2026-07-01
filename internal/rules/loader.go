@@ -7,27 +7,30 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/voocel/ainovel-cli/internal/contentlang"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 )
 
-// LoadOptions 是 Load 的输入参数。
+// LoadOptions là tham số đầu vào của Load.
 //
-// 文件不存在不算错误，loader 静默跳过；解析失败不阻断，conflicts 由 parser 写入 Parsed.Conflicts。
+// File không tồn tại không tính là lỗi, loader bỏ qua im lặng; parse thất bại không chặn, conflicts do parser ghi vào Parsed.Conflicts.
 type LoadOptions struct {
-	// RulesFS 是 assets/rules 子树。约定根目录直接包含 default.md。
-	// 通常通过 fs.Sub(embedFS, "rules") 得到；nil 表示跳过内置规则。
+	// RulesFS là cây con assets/rules. Quy ước thư mục gốc chứa trực tiếp default.md.
+	// Thường lấy qua fs.Sub(embedFS, "rules"); nil nghĩa là bỏ qua rule tích hợp.
 	RulesFS fs.FS
 
-	// HomeRulesDir 是 ~/.ainovel/rules/ 目录；loader 扫描其下所有顶层 .md（文件名字典序合并）。空表示跳过。
+	// HomeRulesDir là thư mục ~/.ainovel/rules/; loader quét mọi .md cấp cao nhất dưới đó (merge theo thứ tự từ điển tên file). Trống nghĩa là bỏ qua.
 	HomeRulesDir string
 
-	// ProjectRulesDir 是 ./.ainovel/rules/ 目录（镜像全局，同样扫描其下所有顶层 .md）。空表示跳过。
+	// ProjectRulesDir là thư mục ./.ainovel/rules/ (gương của toàn cục, cũng quét mọi .md cấp cao nhất dưới đó). Trống nghĩa là bỏ qua.
 	ProjectRulesDir string
 }
 
-// Load 按 Default → Global → Project 顺序读取，返回升序排好的 Parsed 列表。
+// Load đọc theo thứ tự Default → Global → Project, trả về danh sách Parsed đã sắp tăng dần.
 //
-// merger 接收返回值后只需按列表顺序合并即可，后者覆盖前者。
-// 不引入二阶段加载——Genre / Learned 等扩展层在真有内容前不开洞。
+// merger nhận giá trị trả về chỉ cần merge theo thứ tự danh sách, cái sau ghi đè cái trước.
+// Không đưa vào load hai giai đoạn——các lớp mở rộng như Genre / Learned chưa mở khoét trước khi thực sự có nội dung.
 func Load(opts LoadOptions) []Parsed {
 	var layers []Parsed
 	if p, ok := readFromFS(opts.RulesFS, "default.md", SourceDefault, "assets/rules/default.md"); ok {
@@ -38,33 +41,33 @@ func Load(opts LoadOptions) []Parsed {
 	return layers
 }
 
-// readFromFS 从 fs.FS 读取并解析；文件不存在返回 (Parsed{}, false)。
-// displayPath 用于 Parsed.Source（便于在 sources/conflicts 里显示为 "assets/rules/..."）。
+// readFromFS đọc và parse từ fs.FS; file không tồn tại trả về (Parsed{}, false).
+// displayPath dùng cho Parsed.Source (tiện hiển thị trong sources/conflicts dưới dạng "assets/rules/...").
 func readFromFS(fsys fs.FS, name string, kind SourceKind, displayPath string) (Parsed, bool) {
 	if fsys == nil {
 		return Parsed{}, false
 	}
 	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
-		// 文件不存在静默跳过；其他错误也不阻断（loader 设计上不报错）
+		// file không tồn tại thì bỏ qua im lặng; lỗi khác cũng không chặn (loader thiết kế không báo lỗi)
 		if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
 			return Parsed{}, false
 		}
-		// 极少数 IO 错误：作为 parse_error 暴露，避免静默
+		// số rất hiếm lỗi IO: phơi ra như parse_error, tránh im lặng
 		return Parsed{
 			Source: displayPath,
 			Kind:   kind,
 			Conflicts: []Conflict{{
 				Source: displayPath,
 				Kind:   ConflictParseError,
-				Detail: "读取失败: " + err.Error(),
+				Detail: i18n.T("rules.load.read_failed") + err.Error(),
 			}},
 		}, true
 	}
 	return Parse(displayPath, kind, data), true
 }
 
-// readFromDisk 从绝对路径读取并解析；空路径或文件不存在返回 (Parsed{}, false)。
+// readFromDisk đọc và parse từ đường dẫn tuyệt đối; đường dẫn rỗng hoặc file không tồn tại trả về (Parsed{}, false).
 func readFromDisk(absPath string, kind SourceKind) (Parsed, bool) {
 	if strings.TrimSpace(absPath) == "" {
 		return Parsed{}, false
@@ -80,21 +83,21 @@ func readFromDisk(absPath string, kind SourceKind) (Parsed, bool) {
 			Conflicts: []Conflict{{
 				Source: absPath,
 				Kind:   ConflictParseError,
-				Detail: "读取失败: " + err.Error(),
+				Detail: i18n.T("rules.load.read_failed") + err.Error(),
 			}},
 		}, true
 	}
 	return Parse(absPath, kind, data), true
 }
 
-// readDirFromDisk 扫描目录下所有顶层 .md 文件（文件名字典序），逐个解析为 Parsed。
-// 字典序保证同层多文件的合并顺序稳定、可预期（后者覆盖前者）。
-// 跳过子目录与 . 开头的隐藏/编辑器临时文件（如 macOS ._x.md、emacs .#x.md），
-// 避免把脏文件的二进制内容当成偏好正文注入 LLM。
-// 空路径或目录不存在返回 nil（静默跳过，与单文件缺失一致）；
-// 目录存在但读失败（权限 / 路径其实是文件）暴露 ConflictParseError，不静默吞错——
-// 与 readFromFS / readFromDisk 的容错契约保持一致。
-// 不递归子目录——保持扁平，避免引入隐式层级。
+// readDirFromDisk quét mọi file .md cấp cao nhất dưới thư mục (theo thứ tự từ điển tên file), parse từng cái thành Parsed.
+// Thứ tự từ điển bảo đảm thứ tự merge của nhiều file cùng lớp ổn định, dự đoán được (cái sau ghi đè cái trước).
+// Bỏ qua thư mục con và file ẩn/tạm của editor bắt đầu bằng . (như macOS ._x.md, emacs .#x.md),
+// tránh inject nội dung nhị phân của file rác vào LLM như nội dung preference.
+// Đường dẫn rỗng hoặc thư mục không tồn tại trả về nil (bỏ qua im lặng, nhất quán với việc thiếu file đơn);
+// thư mục tồn tại nhưng đọc thất bại (quyền / đường dẫn thực ra là file) phơi ra ConflictParseError, không nuốt lỗi im lặng——
+// giữ nhất quán với hợp đồng dung lỗi của readFromFS / readFromDisk.
+// Không đệ quy thư mục con——giữ phẳng, tránh đưa vào phân cấp ngầm.
 func readDirFromDisk(dir string, kind SourceKind) []Parsed {
 	if strings.TrimSpace(dir) == "" {
 		return nil
@@ -110,7 +113,7 @@ func readDirFromDisk(dir string, kind SourceKind) []Parsed {
 			Conflicts: []Conflict{{
 				Source: dir,
 				Kind:   ConflictParseError,
-				Detail: "规则目录读取失败: " + err.Error(),
+				Detail: i18n.T("rules.load.dir_read_failed") + err.Error(),
 			}},
 		}}
 	}
@@ -131,12 +134,12 @@ func readDirFromDisk(dir string, kind SourceKind) []Parsed {
 	return out
 }
 
-// ainovelDirName 是 ainovel 在 user / project 两级共用的 dotdir 名。
-// 全局 ~/.ainovel/rules/ 与项目 ./.ainovel/rules/ 由此对称。
+// ainovelDirName là tên dotdir mà ainovel dùng chung ở cả hai cấp user / project.
+// Toàn cục ~/.ainovel/rules/ và project ./.ainovel/rules/ đối xứng nhờ đó.
 const ainovelDirName = ".ainovel"
 
-// DefaultProjectRulesDir 拼出 ./.ainovel/rules/ 的绝对路径（基于给定项目目录）。
-// 调用方传入项目根，避免在 loader 内部依赖 cwd；镜像 DefaultHomeRulesDir。
+// DefaultProjectRulesDir ghép ra đường dẫn tuyệt đối của ./.ainovel/rules/ (dựa trên thư mục project cho trước).
+// Caller truyền vào thư mục gốc project, tránh để loader phụ thuộc cwd bên trong; gương của DefaultHomeRulesDir.
 func DefaultProjectRulesDir(projectDir string) string {
 	if projectDir == "" {
 		return ""
@@ -144,8 +147,8 @@ func DefaultProjectRulesDir(projectDir string) string {
 	return filepath.Join(projectDir, ainovelDirName, "rules")
 }
 
-// DefaultHomeRulesDir 拼出 ~/.ainovel/rules/ 目录的绝对路径。
-// home 解析失败返回空串（调用方据此跳过该来源）。
+// DefaultHomeRulesDir ghép ra đường dẫn tuyệt đối của thư mục ~/.ainovel/rules/.
+// home phân giải thất bại trả về chuỗi rỗng (caller dựa vào đó để bỏ qua nguồn này).
 func DefaultHomeRulesDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
@@ -154,9 +157,12 @@ func DefaultHomeRulesDir() string {
 	return filepath.Join(home, ainovelDirName, "rules")
 }
 
-// homeRulesReadme 是首次引导时写入 ~/.ainovel/rules/README.txt 的说明。
-// 刻意用 .txt 后缀而非 .md——loader 只扫描 .md，这份说明不会被当成规则注入 LLM。
-const homeRulesReadme = `这里放全局写作偏好，跨所有书生效。
+// homeRulesReadme là phần giải thích ghi vào ~/.ainovel/rules/README.txt khi dẫn nhập lần đầu.
+// Cố ý dùng đuôi .txt thay vì .md——loader chỉ quét .md, phần giải thích này sẽ không bị inject vào LLM như rule.
+// Là hàm (không phải var) để contentlang.Pick được phân giải lúc gọi, sau khi Set chạy lúc khởi động;
+// var mức package sẽ đóng băng locale ở thời điểm init (trước Set).
+func homeRulesReadme() string {
+	return contentlang.Pick(`这里放全局写作偏好，跨所有书生效。
 
 最简单：新建一个 .md 文件（如 my-style.md），用大白话写偏好就行——
 不需要任何格式、不需要 YAML：
@@ -183,35 +189,63 @@ const homeRulesReadme = `这里放全局写作偏好，跨所有书生效。
 不写也没关系：常见 AI 套句、疲劳词的机械基线已内置，开箱即用。
 
 加载优先级（高 → 低）：./.ainovel/rules/*.md（本书） > ~/.ainovel/rules/*.md（这里） > 内置默认
-`
+`, `Đây là nơi đặt preference viết toàn cục, có hiệu lực với mọi sách.
 
-// EnsureHomeRulesDir 尽力创建 ~/.ainovel/rules/ 目录并写入 README.txt 引导，
-// 让用户发现这个全局偏好扩展点、知道怎么写。
-// nice-to-have，非关键路径：home 解析失败或写入出错都静默吞掉，绝不阻断启动。
+Đơn giản nhất: tạo một file .md (ví dụ my-style.md), viết preference bằng lời thường——
+không cần bất kỳ định dạng nào, không cần YAML:
+
+    # 角色
+    - 主角林尘别写成圣母，外冷内热即可
+    # 风格
+    - 多用身体感知（指节发白）替代情绪标签（紧张）
+    - 对话别太书面
+
+Những nội dung này được giao nguyên văn cho editor để duyệt theo ngữ nghĩa. Nhiều file .md hợp nhất theo thứ tự từ điển của tên file;
+file ẩn bắt đầu bằng dấu chấm và file không phải .md đều bị bỏ qua (nên README.txt này không bị coi là rule).
+
+Nâng cao (tùy chọn): nếu muốn kiểm tra máy móc kiểu cứng, xác định như "số chữ / từ cấm",
+có thể thêm một đoạn YAML front matter ở đầu file——commit_chapter sẽ đếm từng chữ và bắt buộc báo lỗi:
+
+    ---
+    chapter_words: 3000-6000          # phạm vi số chữ chương
+    forbidden_phrases: ["某种程度上"]  # cụm từ cấm, xuất hiện là báo lỗi
+    fatigue_words: {不禁: 1}           # từ gây mệt, mỗi chương vượt ngưỡng sẽ cảnh báo
+    ---
+    （下面照常写大白话偏好）
+
+Không viết cũng không sao: baseline máy móc cho các câu sáo AI thường gặp và từ gây mệt đã được tích hợp sẵn, dùng ngay.
+
+Thứ tự ưu tiên nạp (cao → thấp): ./.ainovel/rules/*.md (sách này) > ~/.ainovel/rules/*.md (ở đây) > mặc định tích hợp
+`)
+}
+
+// EnsureHomeRulesDir cố gắng tạo thư mục ~/.ainovel/rules/ và ghi README.txt dẫn nhập,
+// để người dùng phát hiện điểm mở rộng preference toàn cục này và biết cách viết.
+// nice-to-have, không phải đường tới hạn: home phân giải thất bại hay ghi lỗi đều nuốt im lặng, tuyệt đối không chặn khởi động.
 func EnsureHomeRulesDir() {
 	if dir := DefaultHomeRulesDir(); dir != "" {
 		_ = ensureRulesDirAt(dir)
 	}
 }
 
-// ensureRulesDirAt 创建目录并把 README.txt 写成当前引导模板，是 EnsureHomeRulesDir 的可测内核。
-// README.txt 是系统生成的引导文件（用户偏好写在 *.md，它不被 loader 加载），每次都覆盖为
-// 最新模板——不保留旧内容，也就不需要任何版本兼容逻辑。
+// ensureRulesDirAt tạo thư mục và ghi README.txt thành template dẫn nhập hiện tại, là nhân có thể test của EnsureHomeRulesDir.
+// README.txt là file dẫn nhập do hệ thống sinh ra (preference người dùng viết trong *.md, nó không được loader load), mỗi lần đều ghi đè thành
+// template mới nhất——không giữ nội dung cũ, nên cũng không cần bất kỳ logic tương thích phiên bản nào.
 func ensureRulesDirAt(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "README.txt"), []byte(homeRulesReadme), 0o644)
+	return os.WriteFile(filepath.Join(dir, "README.txt"), []byte(homeRulesReadme()), 0o644)
 }
 
-// DefaultOptions 根据当前工作目录构造常用 LoadOptions。
+// DefaultOptions dựng LoadOptions thông dụng dựa trên thư mục làm việc hiện tại.
 //
-// 适合 Host 启动时调用一次，让 ContextTool / CommitChapterTool 复用同一份配置。
-// 解析 cwd 失败时 ProjectRulesDir 留空（loader 会跳过该来源）。
+// Thích hợp gọi một lần khi Host khởi động, để ContextTool / CommitChapterTool tái dùng cùng một cấu hình.
+// Khi phân giải cwd thất bại thì ProjectRulesDir để trống (loader sẽ bỏ qua nguồn này).
 //
-// 路径语义：ProjectRulesDir 绑定 **当前工作目录（cwd）** 而非 outputDir。
-// 用户 cd 到不同目录启动写不同的书，./.ainovel/rules/ 自然跟着 cwd 走；如需跨书共享，
-// 放 ~/.ainovel/rules/ 全局目录即可（其下所有 .md 都会被加载）。
+// Ngữ nghĩa đường dẫn: ProjectRulesDir gắn với **thư mục làm việc hiện tại (cwd)** chứ không phải outputDir.
+// Người dùng cd sang thư mục khác để khởi động viết quyển khác, ./.ainovel/rules/ tự nhiên đi theo cwd; nếu cần dùng chung xuyên quyển,
+// đặt vào thư mục toàn cục ~/.ainovel/rules/ là được (mọi .md dưới đó đều được load).
 func DefaultOptions(rulesFS fs.FS) LoadOptions {
 	cwd, _ := os.Getwd()
 	return LoadOptions{

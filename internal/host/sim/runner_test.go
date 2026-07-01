@@ -11,9 +11,17 @@ import (
 	"time"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
+
+// TestMain ghim locale nội dung về "zh" cho toàn bộ test gói sim: các assertion đối chiếu
+// nguyên văn chuỗi zh của thông điệp tiến trình, trong khi mặc định runtime là "vi".
+func TestMain(m *testing.M) {
+	contentlang.Set("zh")
+	os.Exit(m.Run())
+}
 
 type scriptedLLM struct {
 	responses []string

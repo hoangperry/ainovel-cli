@@ -1,160 +1,164 @@
-// Package flow 实现垂类路由：Host 根据事实决定下一个调哪个子代理做什么。
+// Package flow hiện thực routing theo lĩnh vực: Host dựa vào sự kiện để quyết định kế tiếp gọi subagent nào làm gì.
 //
-// 设计原则：
-//   - Route 是纯函数：输入 State，输出 *Instruction。无 IO、无 Store 调用，可单测。
-//   - State 由 LoadState（非纯）从 Store 构造，一次性把路由需要的事实读齐。
-//   - 返回 nil 是合法的：表示"裁定场景，让 Coordinator LLM 自主决策"。
+// Nguyên tắc thiết kế:
+//   - Route là hàm thuần: vào State, ra *Instruction. Không IO, không gọi Store, có thể unit test.
+//   - State do LoadState (không thuần) dựng từ Store, đọc một lần đủ các sự kiện mà routing cần.
+//   - Trả về nil là hợp lệ: nghĩa là "kịch bản để phân xử, giao cho Coordinator LLM tự quyết định".
 //
-// Router 覆盖的是"查表型"决策（每章下一步、弧末后处理、队列驱动），
-// 不覆盖"语义理解型"决策（选规划师、处理用户 Steer、输出总结）。
+// Router bao phủ các quyết định "kiểu tra bảng" (bước kế của mỗi chương, hậu xử lý cuối cung truyện, điều phối theo hàng đợi),
+// không bao phủ các quyết định "kiểu hiểu ngữ nghĩa" (chọn Architect, xử lý Steer của người dùng, xuất tổng kết).
 package flow
 
 import (
 	"fmt"
 
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 )
 
-// Instruction 指示 Host 下一步要求 Coordinator 调用的子代理与任务。
+// Instruction chỉ định subagent và nhiệm vụ mà Host yêu cầu Coordinator gọi ở bước kế.
 type Instruction struct {
 	Agent   string // architect_long / architect_short / writer / editor
-	Task    string // 给子代理的任务描述
-	Reason  string // 给 Coordinator 看的理由（可选，方便调试与日志）
-	Chapter int    // writer 任务涉及的章节号（续写/重写/打磨）；0 表示不涉及（editor/architect 任务）
+	Task    string // mô tả nhiệm vụ cho subagent
+	Reason  string // lý do cho Coordinator xem (tùy chọn, tiện debug và log)
+	Chapter int    // số chương mà nhiệm vụ writer liên quan (viết tiếp/viết lại/đánh bóng); 0 nghĩa là không liên quan (nhiệm vụ editor/architect)
 }
 
-// State 是 Route 的输入：所有事实必须在此显式声明，禁止 Route 内部读 Store。
+// State là đầu vào của Route: mọi sự kiện phải khai báo tường minh ở đây, cấm Route đọc Store bên trong.
 type State struct {
 	Progress *domain.Progress
 
-	// 上一个已完成章节（Progress.CompletedChapters 末尾）；为 0 表示尚未开始写作。
+	// Chương hoàn thành trước đó (cuối Progress.CompletedChapters); bằng 0 nghĩa là chưa bắt đầu viết.
 	LastCompleted int
 
-	// 上一章的弧边界信息；IsArcEnd=false 时其他字段无意义。
-	// 当 LastCompleted=0 或非 Layered 模式时应为 nil。
+	// Thông tin biên cung truyện của chương trước; khi IsArcEnd=false thì các trường khác vô nghĩa.
+	// Khi LastCompleted=0 hoặc không ở chế độ Layered thì nên là nil.
 	ArcBoundary *storepkg.ArcBoundary
 
-	// 弧末后处理的三个事实：评审 / 弧摘要 / 卷摘要是否已完成。
+	// Ba sự kiện hậu xử lý cuối cung truyện: rà soát / tóm tắt cung truyện / tóm tắt quyển đã hoàn thành chưa.
 	HasArcReview     bool
 	HasArcSummary    bool
 	HasVolumeSummary bool
 
-	// 基础设定缺项（规划阶段的补齐信号）。
+	// Các mục thiếu trong foundation (tín hiệu bổ sung của giai đoạn lập kế hoạch).
 	FoundationMissing []string
 }
 
-// Route 根据事实返回下一步指令；返回 nil 表示让 Coordinator LLM 自主裁定。
+// Route dựa vào sự kiện trả về chỉ thị bước kế; trả về nil nghĩa là giao cho Coordinator LLM tự phân xử.
 //
-// 决策优先级（互斥，自上而下匹配第一个）：
-//  1. Phase=Complete        → nil（LLM 输出总结）
-//  2. Phase!=Writing        → nil（LLM 裁定规划师选型 / 规划补齐）
-//  3. PendingRewrites 非空  → writer 按队列重写/打磨
-//  4. Flow=Reviewing        → nil（editor 刚保存 review，verdict 分叉由工具层处理）
-//  5. Flow=Steering         → nil（用户干预处理中）
-//  6. 弧末评审缺失           → editor(arc review)
-//  7. 弧末评审有但弧摘要缺失  → editor(arc summary)
-//  8. 卷末弧摘要有但卷摘要缺失 → editor(volume summary)
-//  9. 下一弧是骨架           → architect_long(expand_arc)
+// Thứ tự ưu tiên quyết định (loại trừ lẫn nhau, từ trên xuống khớp cái đầu tiên):
+//  1. Phase=Complete        → nil (LLM xuất tổng kết)
+//  2. Phase!=Writing        → nil (LLM phân xử chọn Architect / bổ sung kế hoạch)
+//  3. PendingRewrites khác rỗng → writer viết lại/đánh bóng theo hàng đợi
+//  4. Flow=Reviewing        → nil (editor vừa lưu review, rẽ nhánh verdict do tầng tool xử lý)
+//  5. Flow=Steering         → nil (đang xử lý can thiệp của người dùng)
+//  6. Thiếu rà soát cuối cung truyện       → editor(arc review)
+//  7. Có rà soát nhưng thiếu tóm tắt cung truyện → editor(arc summary)
+//  8. Cuối quyển có tóm tắt cung truyện nhưng thiếu tóm tắt quyển → editor(volume summary)
+//  9. Cung truyện kế là khung xương         → architect_long(expand_arc)
 //
-// 10. 卷末需决策下一卷       → architect_long(append_volume / complete_book)
-// 11. 其它                  → writer(写 next_chapter)
+// 10. Cuối quyển cần quyết định quyển kế   → architect_long(append_volume / complete_book)
+// 11. Còn lại                  → writer(viết next_chapter)
 func Route(s State) *Instruction {
 	p := s.Progress
 	if p == nil {
 		return nil
 	}
 
-	// 1. 终态：让 LLM 输出总结
+	// 1. Trạng thái cuối: để LLM xuất tổng kết
 	if p.Phase == domain.PhaseComplete {
 		return nil
 	}
 
-	// 2. 规划阶段由 Coordinator 裁定（选 architect_long/short + 补齐循环）
+	// 2. Giai đoạn lập kế hoạch do Coordinator phân xử (chọn architect_long/short + vòng bổ sung)
 	if p.Phase != domain.PhaseWriting {
 		return nil
 	}
 
-	// 3. 重写/打磨队列优先（事实已在工具层落盘，Router 只照单派发）
+	// 3. Ưu tiên hàng đợi viết lại/đánh bóng (sự kiện đã ghi xuống ở tầng tool, Router chỉ phái theo đơn)
 	if len(p.PendingRewrites) > 0 {
 		ch := p.PendingRewrites[0]
-		verb := "重写"
+		verb := contentlang.Pick("重写", "viết lại")
 		if p.Flow == domain.FlowPolishing {
-			verb = "打磨"
+			verb = contentlang.Pick("打磨", "trau chuốt")
 		}
 		return &Instruction{
 			Agent:   "writer",
-			Task:    fmt.Sprintf("%s第 %d 章", verb, ch),
-			Reason:  fmt.Sprintf("PendingRewrites 队列剩余 %d 章", len(p.PendingRewrites)),
+			Task:    fmt.Sprintf(contentlang.Pick("%s第 %d 章", "%s chương %d"), verb, ch),
+			Reason:  fmt.Sprintf(contentlang.Pick("PendingRewrites 队列剩余 %d 章", "PendingRewrites hàng đợi còn %d chương"), len(p.PendingRewrites)),
 			Chapter: ch,
 		}
 	}
 
-	// 4. 审阅中：save_review 刚落盘，verdict 升级/降级由工具层处理，路由不介入
+	// 4. Đang rà soát: save_review vừa ghi xuống, nâng/hạ cấp verdict do tầng tool xử lý, routing không can dự
 	if p.Flow == domain.FlowReviewing {
 		return nil
 	}
 
-	// 5. 用户干预处理中：Coordinator 正在裁定，Host 不抢占
+	// 5. Đang xử lý can thiệp của người dùng: Coordinator đang phân xử, Host không tranh quyền
 	if p.Flow == domain.FlowSteering {
 		return nil
 	}
 
-	// 6-10. 分层模式的弧末后处理
+	// 6-10. Hậu xử lý cuối cung truyện ở chế độ phân tầng
 	if p.Layered && s.ArcBoundary != nil && s.ArcBoundary.IsArcEnd {
 		b := s.ArcBoundary
 		switch {
 		case !s.HasArcReview:
 			return &Instruction{
 				Agent:  "editor",
-				Task:   fmt.Sprintf("对第 %d 卷第 %d 弧做弧级评审（scope=arc）", b.Volume, b.Arc),
-				Reason: "弧末评审未完成",
+				Task:   fmt.Sprintf(contentlang.Pick("对第 %d 卷第 %d 弧做弧级评审（scope=arc）", "rà soát cấp cung cho quyển %d cung %d (scope=arc)"), b.Volume, b.Arc),
+				Reason: contentlang.Pick("弧末评审未完成", "Rà soát cuối cung chưa hoàn thành"),
 			}
 		case !s.HasArcSummary:
 			return &Instruction{
 				Agent:  "editor",
-				Task:   fmt.Sprintf("生成第 %d 卷第 %d 弧摘要（save_arc_summary）", b.Volume, b.Arc),
-				Reason: "弧摘要未完成",
+				Task:   fmt.Sprintf(contentlang.Pick("生成第 %d 卷第 %d 弧摘要（save_arc_summary）", "tạo tóm tắt cung cho quyển %d cung %d (save_arc_summary)"), b.Volume, b.Arc),
+				Reason: contentlang.Pick("弧摘要未完成", "Tóm tắt cung chưa hoàn thành"),
 			}
 		case b.IsVolumeEnd && !s.HasVolumeSummary:
 			return &Instruction{
 				Agent:  "editor",
-				Task:   fmt.Sprintf("生成第 %d 卷卷摘要（save_volume_summary）", b.Volume),
-				Reason: "卷摘要未完成",
+				Task:   fmt.Sprintf(contentlang.Pick("生成第 %d 卷卷摘要（save_volume_summary）", "tạo tóm tắt quyển cho quyển %d (save_volume_summary)"), b.Volume),
+				Reason: contentlang.Pick("卷摘要未完成", "Tóm tắt quyển chưa hoàn thành"),
 			}
 		case b.NeedsExpansion && b.NextArc > 0:
 			return &Instruction{
 				Agent:  "architect_long",
-				Task:   fmt.Sprintf("展开第 %d 卷第 %d 弧（save_foundation type=expand_arc）", b.NextVolume, b.NextArc),
-				Reason: "下一弧骨架待展开",
+				Task:   fmt.Sprintf(contentlang.Pick("展开第 %d 卷第 %d 弧（save_foundation type=expand_arc）", "mở rộng quyển %d cung %d (save_foundation type=expand_arc)"), b.NextVolume, b.NextArc),
+				Reason: contentlang.Pick("下一弧骨架待展开", "Khung xương cung kế chờ mở rộng"),
 			}
 		case b.NeedsNewVolume:
 			return &Instruction{
 				Agent:  "architect_long",
-				Task:   "评估后调用 save_foundation type=append_volume（继续写）或 type=complete_book（全书结束）",
-				Reason: "卷末需决定追加新卷或结束全书",
+				Task:   contentlang.Pick("评估后调用 save_foundation type=append_volume（继续写）或 type=complete_book（全书结束）", "sau khi đánh giá hãy gọi save_foundation type=append_volume (viết tiếp) hoặc type=complete_book (kết thúc toàn sách)"),
+				Reason: contentlang.Pick("卷末需决定追加新卷或结束全书", "Cuối quyển cần quyết định thêm quyển mới hay kết thúc toàn sách"),
 			}
 		}
 	}
 
-	// 12. 正常续写
+	// 12. Viết tiếp bình thường
 	next := p.NextChapter()
 	if next <= 0 {
 		return nil
 	}
 	return &Instruction{
 		Agent:   "writer",
-		Task:    fmt.Sprintf("写第 %d 章", next),
-		Reason:  "续写下一章",
+		Task:    fmt.Sprintf(contentlang.Pick("写第 %d 章", "viết chương %d"), next),
+		Reason:  contentlang.Pick("续写下一章", "Viết tiếp chương kế"),
 		Chapter: next,
 	}
 }
 
-// FormatMessage 把 Instruction 格式化为发给 Coordinator 的用户消息。
-// 格式固定，便于 Coordinator prompt 识别与 LLM 直接响应。
+// FormatMessage định dạng Instruction thành tin nhắn người dùng gửi cho Coordinator.
+// Định dạng cố định, tiện cho prompt của Coordinator nhận diện và LLM phản hồi trực tiếp.
 func FormatMessage(i *Instruction) string {
 	return fmt.Sprintf(
-		"[Host 下达指令] 下一步：调用 subagent(%s, %q)\n理由：%s\n这是流程层的明确指令，请立即执行，不要先调 novel_context，不要先输出推理。",
+		contentlang.Pick(
+			"[Host 下达指令] 下一步：调用 subagent(%s, %q)\n理由：%s\n这是流程层的明确指令，请立即执行，不要先调 novel_context，不要先输出推理。",
+			"[Host 下达指令] Bước kế: gọi subagent(%s, %q)\nLý do: %s\nĐây là chỉ thị rõ ràng của tầng quy trình, hãy thực thi ngay, không tra novel_context trước, không xuất suy luận trước.",
+		),
 		i.Agent, i.Task, i.Reason,
 	)
 }

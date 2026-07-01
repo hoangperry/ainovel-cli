@@ -1,22 +1,22 @@
-// Package store 提供基于文件系统的持久化存储。
+// Package store cung cấp lưu trữ bền vững dựa trên hệ thống tập tin.
 //
-// 架构：1 个 IO 基座 + 多个子存储 + 1 个组合根。
-// 每个子存储持有独立的 IO 实例和独立的 sync.RWMutex。
-// 主要领域（Progress、Outline、Drafts、Summaries 等）的读写互不阻塞；
-// WorldStore 将多个低频小领域合并共享一把锁。
+// Kiến trúc: 1 nền IO + nhiều sub-store + 1 composition root.
+// Mỗi sub-store giữ một instance IO độc lập và một sync.RWMutex độc lập.
+// Việc đọc/ghi của các domain chính (Progress, Outline, Drafts, Summaries...) không chặn lẫn nhau;
+// WorldStore gộp nhiều domain nhỏ tần suất thấp dùng chung một khóa.
 //
-// 组合根 Store 持有所有子存储的引用，并负责跨域原子操作
+// Composition root Store giữ tham chiếu tới mọi sub-store và chịu trách nhiệm thao tác nguyên tử xuyên domain
 // （ExpandArc、AppendVolume、ClearHandledSteer）。
 //
-// 子存储划分：
-//   - ProgressStore: 进度主状态（meta/progress.json）
-//   - OutlineStore: 前提、大纲（扁平/分层）、指南针
-//   - DraftStore: 章节构思、草稿、终稿
-//   - SummaryStore: 章/弧/卷摘要
-//   - RunMetaStore: 运行元数据（模型、干预历史）
-//   - SignalStore: 一次性信号文件（PendingCommit 恢复）
-//   - CheckpointStore: step 级 checkpoint（meta/checkpoints.jsonl）
-//   - RuntimeStore: 运行时事件队列（meta/runtime/*.jsonl）
-//   - CharacterStore: 角色档案、状态快照
-//   - WorldStore: 时间线、伏笔、关系、状态变化、世界规则、风格规则、审阅
+// Phân chia sub-store:
+//   - ProgressStore: trạng thái tiến độ chính (meta/progress.json)
+//   - OutlineStore: tiền đề, dàn ý (phẳng/phân tầng), la bàn
+//   - DraftStore: phác thảo chương, bản nháp, bản cuối
+//   - SummaryStore: tóm tắt chương/cung/quyển
+//   - RunMetaStore: metadata vận hành (model, lịch sử can thiệp)
+//   - SignalStore: file tín hiệu dùng một lần (khôi phục PendingCommit)
+//   - CheckpointStore: checkpoint cấp step (meta/checkpoints.jsonl)
+//   - RuntimeStore: hàng đợi sự kiện runtime (meta/runtime/*.jsonl)
+//   - CharacterStore: hồ sơ nhân vật, snapshot trạng thái
+//   - WorldStore: dòng thời gian, phục bút, quan hệ, thay đổi trạng thái, luật thế giới, luật văn phong, rà soát
 package store

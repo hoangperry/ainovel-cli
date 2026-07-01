@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// makeParsed 是测试辅助：构造一个 Parsed，省略冗长字段。
+// makeParsed là tiện ích test: dựng một Parsed, lược bỏ các trường dài dòng.
 func makeParsed(source string, kind SourceKind, s Structured, pref string) Parsed {
 	return Parsed{Source: source, Kind: kind, Structured: s, Preference: pref}
 }
@@ -22,8 +22,8 @@ func TestMerge_Empty(t *testing.T) {
 }
 
 func TestMerge_NearestWinsScalar(t *testing.T) {
-	// default 说 chapter_words: 3000-6000，project 说 chapter_words: 4000-8000
-	// 期望：项目优先
+	// default nói chapter_words: 3000-6000, project nói chapter_words: 4000-8000
+	// kỳ vọng: project ưu tiên
 	layers := []Parsed{
 		makeParsed("default.md", SourceDefault, Structured{
 			ChapterWords: &WordRange{Min: 3000, Max: 6000},
@@ -36,14 +36,14 @@ func TestMerge_NearestWinsScalar(t *testing.T) {
 	if b.Structured.ChapterWords == nil || b.Structured.ChapterWords.Min != 4000 || b.Structured.ChapterWords.Max != 8000 {
 		t.Errorf("project should win, got %+v", b.Structured.ChapterWords)
 	}
-	// 一致性冲突应被识别
+	// conflict nhất quán phải được nhận diện
 	if !hasConflict(b.Conflicts, ConflictFieldConflict, "chapter_words") {
 		t.Errorf("expected field_conflict for chapter_words, got %+v", b.Conflicts)
 	}
 }
 
 func TestMerge_NoConflictWhenEqual(t *testing.T) {
-	// 两层都声明同一字段，但值完全一致 → 不算冲突
+	// cả hai lớp đều khai báo cùng trường, nhưng giá trị hoàn toàn nhất quán → không tính conflict
 	layers := []Parsed{
 		makeParsed("default.md", SourceDefault, Structured{
 			ChapterWords:   &WordRange{Min: 3000, Max: 6000},
@@ -63,7 +63,7 @@ func TestMerge_NoConflictWhenEqual(t *testing.T) {
 }
 
 func TestMerge_NearestWinsList(t *testing.T) {
-	// global ["——"], project ["（"]，期望项目生效，且报冲突
+	// global ["——"], project ["（"], kỳ vọng project có hiệu lực, và báo conflict
 	layers := []Parsed{
 		makeParsed("global.md", SourceGlobal, Structured{
 			ForbiddenChars: []string{"——"},
@@ -82,7 +82,7 @@ func TestMerge_NearestWinsList(t *testing.T) {
 }
 
 func TestMerge_FatigueWordsMergeByKey(t *testing.T) {
-	// genre fatigue {不禁:1}; project fatigue {竟然:2} → 按词合并，避免用户只新增一词时丢失默认规则
+	// genre fatigue {不禁:1}; project fatigue {竟然:2} → merge theo từng từ, tránh để người dùng chỉ thêm một từ lại mất rule mặc định
 	layers := []Parsed{
 		makeParsed("default.md", SourceDefault, Structured{
 			FatigueWords: map[string]int{"不禁": 1},
@@ -102,7 +102,7 @@ func TestMerge_FatigueWordsMergeByKey(t *testing.T) {
 }
 
 func TestMerge_FatigueWordsNearestWinsSameKey(t *testing.T) {
-	// 同一疲劳词多来源声明不同阈值 → 就近优先，并只针对该词报冲突
+	// cùng một fatigue word được nhiều nguồn khai báo ngưỡng khác nhau → ưu tiên gần nhất, và chỉ báo conflict cho từ đó
 	layers := []Parsed{
 		makeParsed("default.md", SourceDefault, Structured{
 			FatigueWords: map[string]int{"不禁": 1, "然而": 2},
@@ -122,7 +122,7 @@ func TestMerge_FatigueWordsNearestWinsSameKey(t *testing.T) {
 }
 
 func TestMerge_PreservesUntouchedFields(t *testing.T) {
-	// 低优先级声明字段 A；高优先级只声明字段 B → A 应保留
+	// ưu tiên thấp khai báo trường A; ưu tiên cao chỉ khai báo trường B → A phải được giữ lại
 	layers := []Parsed{
 		makeParsed("default.md", SourceDefault, Structured{
 			ForbiddenChars: []string{"——"},
@@ -152,13 +152,13 @@ func TestMerge_MarkdownConcatenated(t *testing.T) {
 	if !strings.Contains(b.Preferences, "项目偏好正文") {
 		t.Errorf("project body missing: %q", b.Preferences)
 	}
-	// 顺序：default 在前，project 在后
+	// thứ tự: default trước, project sau
 	di := strings.Index(b.Preferences, "默认偏好正文")
 	pi := strings.Index(b.Preferences, "项目偏好正文")
 	if di >= pi {
 		t.Errorf("default body should appear before project body; default@%d project@%d", di, pi)
 	}
-	// 来源标题
+	// tiêu đề nguồn
 	if !strings.Contains(b.Preferences, "[default] default.md") {
 		t.Errorf("source header for default missing: %q", b.Preferences)
 	}
@@ -182,7 +182,7 @@ func TestMerge_SkipsEmptyBody(t *testing.T) {
 }
 
 func TestMerge_PropagatesParsedConflicts(t *testing.T) {
-	// 单文件已有解析期 conflict（如 unknown field），merger 应原样汇总
+	// file đơn đã có conflict thời điểm parse (như unknown field), merger phải tổng hợp nguyên trạng
 	parsed := Parsed{
 		Source: "project.md",
 		Kind:   SourceProject,
@@ -212,7 +212,7 @@ func TestMerge_AllSourcesInList(t *testing.T) {
 	}
 }
 
-// hasConflict 检查 conflicts 中是否存在指定 (Kind, Field) 的条目。
+// hasConflict kiểm tra trong conflicts có tồn tại mục (Kind, Field) chỉ định hay không.
 func hasConflict(conflicts []Conflict, kind ConflictKind, field string) bool {
 	for _, c := range conflicts {
 		if c.Kind == kind && c.Field == field {

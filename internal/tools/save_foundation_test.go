@@ -162,7 +162,7 @@ func TestSaveFoundationAppendVolume(t *testing.T) {
 
 	tool := NewSaveFoundationTool(s)
 
-	// 先创建初始 layered_outline（卷1）
+	// Tạo layered_outline ban đầu trước (quyển 1)
 	layeredArgs, _ := json.Marshal(map[string]any{
 		"type": "layered_outline",
 		"content": []map[string]any{{
@@ -178,7 +178,7 @@ func TestSaveFoundationAppendVolume(t *testing.T) {
 		t.Fatalf("Execute layered: %v", err)
 	}
 
-	// append_volume：追加卷2
+	// append_volume: thêm quyển 2
 	appendArgs, _ := json.Marshal(map[string]any{
 		"type": "append_volume",
 		"content": map[string]any{
@@ -199,7 +199,7 @@ func TestSaveFoundationAppendVolume(t *testing.T) {
 		t.Fatalf("expected volume=2, got %v", result["volume"])
 	}
 
-	// 验证大纲有 2 卷
+	// Kiểm chứng dàn ý có 2 quyển
 	volumes, _ := s.Outline.LoadLayeredOutline()
 	if len(volumes) != 2 {
 		t.Fatalf("expected 2 volumes, got %d", len(volumes))
@@ -221,7 +221,7 @@ func TestSaveFoundationAppendVolumeValidation(t *testing.T) {
 
 	tool := NewSaveFoundationTool(s)
 
-	// 初始卷
+	// Quyển ban đầu
 	layeredArgs, _ := json.Marshal(map[string]any{
 		"type": "layered_outline",
 		"content": []map[string]any{{
@@ -235,7 +235,7 @@ func TestSaveFoundationAppendVolumeValidation(t *testing.T) {
 	})
 	tool.Execute(context.Background(), layeredArgs)
 
-	// Index 不递增 → 应失败（结构性校验）
+	// Index không tăng dần → phải thất bại (kiểm tra cấu trúc)
 	appendArgs, _ := json.Marshal(map[string]any{
 		"type": "append_volume",
 		"content": map[string]any{
@@ -252,8 +252,8 @@ func TestSaveFoundationAppendVolumeValidation(t *testing.T) {
 	}
 }
 
-// TestSaveFoundationAppendVolumeRejectsAfterComplete 验证 Phase=Complete 后不允许 append_volume。
-// 取代旧的"Final 卷拒绝追加"语义（Final 字段已删除）。
+// TestSaveFoundationAppendVolumeRejectsAfterComplete kiểm chứng sau Phase=Complete không cho phép append_volume.
+// Thay thế ngữ nghĩa cũ "quyển Final từ chối thêm" (trường Final đã bị xóa).
 func TestSaveFoundationAppendVolumeRejectsAfterComplete(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -325,7 +325,7 @@ func TestSaveFoundationUpdateCompassOverridesLastUpdated(t *testing.T) {
 	if err := s.Progress.Save(&domain.Progress{
 		NovelName:         "光斑",
 		Phase:             domain.PhaseWriting,
-		CompletedChapters: []int{1, 2, 3, 5, 4}, // 乱序，验证取 max 而非 len
+		CompletedChapters: []int{1, 2, 3, 5, 4}, // không theo thứ tự, kiểm chứng lấy max chứ không phải len
 	}); err != nil {
 		t.Fatalf("Save progress: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestSaveFoundationUpdateCompassOverridesLastUpdated(t *testing.T) {
 		"content": map[string]any{
 			"ending_direction": "主角面对最终抉择",
 			"open_threads":     []string{"线索A"},
-			"last_updated":     0, // LLM 通常忘填或留 0
+			"last_updated":     0, // LLM thường quên điền hoặc để 0
 		},
 	})
 	if _, err := tool.Execute(context.Background(), args); err != nil {
@@ -408,9 +408,9 @@ func TestSaveFoundationAcceptsDirectJSONArrayContent(t *testing.T) {
 	}
 }
 
-// completeBookSetup 建一份处于 writing 阶段的最小 Store，用于 complete_book 系列测试。
-// complete_book 不校验 layered_outline 章节齐全（判定责任在 LLM 的"完结判定清单"），
-// 工具层只校验 PendingRewrites 为空、progress 已初始化。
+// completeBookSetup dựng một Store tối thiểu đang ở giai đoạn writing, dùng cho loạt test complete_book.
+// complete_book không kiểm tra chương của layered_outline đầy đủ (trách nhiệm phán định nằm ở "danh sách phán định kết thúc" của LLM),
+// tầng tool chỉ kiểm tra PendingRewrites rỗng, progress đã khởi tạo.
 func completeBookSetup(t *testing.T) *store.Store {
 	t.Helper()
 	dir := t.TempDir()
@@ -450,7 +450,7 @@ func TestSaveFoundationCompleteBookPushesPhaseComplete(t *testing.T) {
 }
 
 func TestSaveFoundationCompleteBookRejectsBeforeWriting(t *testing.T) {
-	// 规划阶段误调 complete_book 必须被拒，否则会直接跳过整本写作。
+	// Giai đoạn lập kế hoạch gọi nhầm complete_book phải bị từ chối, nếu không sẽ bỏ qua thẳng việc viết cả cuốn.
 	dir := t.TempDir()
 	s := store.NewStore(dir)
 	if err := s.Init(); err != nil {

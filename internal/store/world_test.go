@@ -18,7 +18,7 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
-// TestLoadEmpty 统一验证所有领域的空读取行为。
+// TestLoadEmpty xác minh thống nhất hành vi đọc rỗng của mọi domain.
 func TestLoadEmpty(t *testing.T) {
 	s := newTestStore(t)
 
@@ -86,7 +86,7 @@ func TestTimeline_LoadRecent(t *testing.T) {
 	for _, tt := range []struct {
 		current, window, want int
 	}{
-		{7, 10, 4}, // 全部
+		{7, 10, 4}, // toàn bộ
 		{7, 3, 2},  // ch5,ch7
 		{5, 2, 3},  // ch3,ch5,ch7
 	} {
@@ -124,7 +124,7 @@ func TestForeshadow_UpdateLifecycle(t *testing.T) {
 		t.Errorf("f2: want resolved@3, got %s@%d", all[1].Status, all[1].ResolvedAt)
 	}
 
-	// LoadActive 应排除 resolved
+	// LoadActive phải loại trừ resolved
 	active, _ := s.World.LoadActiveForeshadow()
 	if len(active) != 1 || active[0].ID != "f1" {
 		t.Errorf("active: want [f1], got %v", active)
@@ -139,7 +139,7 @@ func TestRelationships_UpdateMerge(t *testing.T) {
 		{CharacterA: "张三", CharacterB: "李四", Relation: "师徒", Chapter: 1},
 	})
 
-	// 更新已有 + 新增
+	// cập nhật cái đã có + thêm mới
 	_ = s.World.UpdateRelationships([]domain.RelationshipEntry{
 		{CharacterA: "张三", CharacterB: "李四", Relation: "挚友", Chapter: 5},
 		{CharacterA: "王五", CharacterB: "赵六", Relation: "同门", Chapter: 5},
@@ -159,7 +159,7 @@ func TestRelationships_PairKeySymmetry(t *testing.T) {
 	_ = s.World.SaveRelationships([]domain.RelationshipEntry{
 		{CharacterA: "张三", CharacterB: "李四", Relation: "师徒", Chapter: 1},
 	})
-	// B-A 顺序更新，应匹配同一条
+	// cập nhật theo thứ tự B-A, phải khớp cùng một mục
 	_ = s.World.UpdateRelationships([]domain.RelationshipEntry{
 		{CharacterA: "李四", CharacterB: "张三", Relation: "反目", Chapter: 3},
 	})
@@ -227,7 +227,7 @@ func TestReview_GlobalScopeIsolation(t *testing.T) {
 	s := newTestStore(t)
 	_ = s.World.SaveReview(domain.ReviewEntry{Chapter: 5, Scope: "global", Verdict: "accept"})
 
-	// chapter-scoped load 不应找到 global review
+	// load theo chapter-scope không được tìm thấy global review
 	if got, _ := s.World.LoadReview(5); got != nil {
 		t.Errorf("chapter load should not find global: %+v", got)
 	}
@@ -249,7 +249,7 @@ func TestReview_LoadLastReview(t *testing.T) {
 			t.Errorf("LoadLastReview(%d): want ch%d, got %+v", tt.from, tt.want, got)
 		}
 	}
-	// from=1 找不到
+	// from=1 không tìm thấy
 	if got, _ := s.World.LoadLastReview(1); got != nil {
 		t.Errorf("from=1 should be nil, got %+v", got)
 	}
@@ -285,14 +285,14 @@ func TestRenderWorldRules(t *testing.T) {
 		{Category: "magic", Rule: "禁咒需三人", Boundary: "单人施放会死"},
 	})
 
-	// magic 分组应在 society 之前
+	// nhóm magic phải đứng trước society
 	if strings.Index(md, "## magic") >= strings.Index(md, "## society") {
 		t.Error("magic should appear before society")
 	}
 	if !strings.Contains(md, "边界：精神力耗尽会昏迷") {
 		t.Error("missing boundary")
 	}
-	// 无 boundary 不应输出空边界行
+	// không có boundary thì không được xuất dòng biên rỗng
 	if strings.Contains(md, "边界：\n") {
 		t.Error("empty boundary rendered")
 	}

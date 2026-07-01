@@ -8,6 +8,7 @@ import (
 
 	"github.com/voocel/agentcore"
 	corecontext "github.com/voocel/agentcore/context"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
@@ -57,7 +58,7 @@ func buildWriterStoreSummaryText(s *store.Store, budgetTokens int) (string, bool
 	if len(parts) == 0 {
 		return "", false, nil
 	}
-	return "以下内容来自小说持久化 store，用于在压缩后恢复写作上下文。\n\n" + strings.Join(parts, "\n\n"), true, nil
+	return contentlang.Pick("以下内容来自小说持久化 store，用于在压缩后恢复写作上下文。\n\n", "Nội dung dưới đây đến từ store lưu trữ tiểu thuyết, dùng để khôi phục bối cảnh viết sau khi nén.\n\n") + strings.Join(parts, "\n\n"), true, nil
 }
 
 func buildWriterRestoreText(s *store.Store, budgetTokens int) (string, bool, error) {
@@ -234,33 +235,33 @@ func writerStoreProgressSection(state *writerStoreSummaryState) map[string]any {
 
 func writerStoreSummarySections(state *writerStoreSummaryState) []writerStoreSection {
 	return []writerStoreSection{
-		{heading: "当前进度", data: writerStoreProgressSection(state)},
-		{heading: "最近章节摘要", data: state.recentSummaries},
-		{heading: "当前章节计划", data: state.chapterPlan},
-		{heading: "当前章节大纲", data: state.currentOutline},
-		{heading: "当前弧摘要", data: state.currentArcSummary},
-		{heading: "当前卷摘要", data: state.currentVolSummary},
-		{heading: "角色快照", data: state.snapshots},
-		{heading: "活跃伏笔", data: state.foreshadow},
-		{heading: "待修审稿问题", data: state.pendingReviews},
-		{heading: "最近时间线", data: state.timeline},
-		{heading: "风格规则", data: state.styleRules},
+		{heading: contentlang.Pick("当前进度", "Tiến độ hiện tại"), data: writerStoreProgressSection(state)},
+		{heading: contentlang.Pick("最近章节摘要", "Tóm tắt chương gần đây"), data: state.recentSummaries},
+		{heading: contentlang.Pick("当前章节计划", "Kế hoạch chương hiện tại"), data: state.chapterPlan},
+		{heading: contentlang.Pick("当前章节大纲", "Dàn ý chương hiện tại"), data: state.currentOutline},
+		{heading: contentlang.Pick("当前弧摘要", "Tóm tắt cung truyện hiện tại"), data: state.currentArcSummary},
+		{heading: contentlang.Pick("当前卷摘要", "Tóm tắt quyển hiện tại"), data: state.currentVolSummary},
+		{heading: contentlang.Pick("角色快照", "Snapshot nhân vật"), data: state.snapshots},
+		{heading: contentlang.Pick("活跃伏笔", "Phục bút đang hoạt động"), data: state.foreshadow},
+		{heading: contentlang.Pick("待修审稿问题", "Vấn đề thẩm định chờ sửa"), data: state.pendingReviews},
+		{heading: contentlang.Pick("最近时间线", "Dòng thời gian gần đây"), data: state.timeline},
+		{heading: contentlang.Pick("风格规则", "Quy tắc văn phong"), data: state.styleRules},
 	}
 }
 
 func writerRestoreSections(state *writerStoreSummaryState) []writerStoreSection {
 	return []writerStoreSection{
-		{heading: "当前进度", data: writerStoreProgressSection(state)},
-		{heading: "当前章节计划", data: state.chapterPlan},
-		{heading: "当前章节大纲", data: state.currentOutline},
-		{heading: "待修审稿问题", data: state.pendingReviews},
-		{heading: "角色快照", data: state.snapshots},
-		{heading: "最近章节摘要", data: state.recentSummaries},
-		{heading: "活跃伏笔", data: state.foreshadow},
-		{heading: "当前弧摘要", data: state.currentArcSummary},
-		{heading: "当前卷摘要", data: state.currentVolSummary},
-		{heading: "最近时间线", data: state.timeline},
-		{heading: "风格规则", data: state.styleRules},
+		{heading: contentlang.Pick("当前进度", "Tiến độ hiện tại"), data: writerStoreProgressSection(state)},
+		{heading: contentlang.Pick("当前章节计划", "Kế hoạch chương hiện tại"), data: state.chapterPlan},
+		{heading: contentlang.Pick("当前章节大纲", "Dàn ý chương hiện tại"), data: state.currentOutline},
+		{heading: contentlang.Pick("待修审稿问题", "Vấn đề thẩm định chờ sửa"), data: state.pendingReviews},
+		{heading: contentlang.Pick("角色快照", "Snapshot nhân vật"), data: state.snapshots},
+		{heading: contentlang.Pick("最近章节摘要", "Tóm tắt chương gần đây"), data: state.recentSummaries},
+		{heading: contentlang.Pick("活跃伏笔", "Phục bút đang hoạt động"), data: state.foreshadow},
+		{heading: contentlang.Pick("当前弧摘要", "Tóm tắt cung truyện hiện tại"), data: state.currentArcSummary},
+		{heading: contentlang.Pick("当前卷摘要", "Tóm tắt quyển hiện tại"), data: state.currentVolSummary},
+		{heading: contentlang.Pick("最近时间线", "Dòng thời gian gần đây"), data: state.timeline},
+		{heading: contentlang.Pick("风格规则", "Quy tắc văn phong"), data: state.styleRules},
 	}
 }
 
@@ -387,7 +388,7 @@ func appendJSONSection(parts *[]string, heading string, data any, remaining *int
 			return true
 		}
 		text = truncateJSONToTokens(b, *remaining-20)
-		*parts = append(*parts, fmt.Sprintf("## %s\n%s [已截断]", heading, text))
+		*parts = append(*parts, fmt.Sprintf(contentlang.Pick("## %s\n%s [已截断]", "## %s\n%s [đã cắt ngắn]"), heading, text))
 		*remaining = 0
 		return true
 	}

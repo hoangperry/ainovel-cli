@@ -5,9 +5,11 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"github.com/voocel/ainovel-cli/internal/i18n"
 )
 
-// ChronicLowDimension 检测某评审维度跨多章持续低分。
+// ChronicLowDimension phát hiện một chiều rà soát liên tục điểm thấp qua nhiều chương.
 func ChronicLowDimension(snap *Snapshot) []Finding {
 	if len(snap.Reviews) < 2 {
 		return nil
@@ -39,15 +41,15 @@ func ChronicLowDimension(snap *Snapshot) []Finding {
 			Confidence: ConfMedium,
 			AutoLevel:  AutoNone,
 			Target:     "prompt.writer",
-			Title:      fmt.Sprintf("维度 [%s] 持续低分 (均值 %.0f)", name, avg),
-			Evidence:   fmt.Sprintf("共 %d 次评审，均分 %.1f", count, avg),
-			Suggestion: fmt.Sprintf("检查 Writer prompt 中关于 %s 的指引是否清晰，或 Editor prompt 的 %s 评分标准是否合理。", name, name),
+			Title:      i18n.Tf("diag.quality.chronic_low_dim.title", name, avg),
+			Evidence:   i18n.Tf("diag.quality.chronic_low_dim.evidence", count, avg),
+			Suggestion: i18n.Tf("diag.quality.chronic_low_dim.suggestion", name, name),
 		})
 	}
 	return findings
 }
 
-// ContractMissPattern 检测合同履约率过低。
+// ContractMissPattern phát hiện tỉ lệ đạt hợp đồng quá thấp.
 func ContractMissPattern(snap *Snapshot) []Finding {
 	if len(snap.Reviews) == 0 {
 		return nil
@@ -76,13 +78,13 @@ func ContractMissPattern(snap *Snapshot) []Finding {
 		Confidence: ConfMedium,
 		AutoLevel:  AutoNone,
 		Target:     "prompt.writer",
-		Title:      fmt.Sprintf("合同履约率低 (%.0f%% 未达成)", rate*100),
-		Evidence:   fmt.Sprintf("未达成: [%s]，共 %d/%d", strings.Join(missedChapters, ", "), missed, total),
-		Suggestion: "Writer 可能未读 contract，或 contract required_beats 过于激进。检查 plan_chapter 和 writer.md 的配合。",
+		Title:      i18n.Tf("diag.quality.contract_miss.title", rate*100),
+		Evidence:   i18n.Tf("diag.quality.contract_miss.evidence", strings.Join(missedChapters, ", "), missed, total),
+		Suggestion: i18n.T("diag.quality.contract_miss.suggestion"),
 	}}
 }
 
-// HookWeakChain 检测章节 hook 评分连续偏弱。
+// HookWeakChain phát hiện điểm hook của chương liên tiếp hơi yếu.
 func HookWeakChain(snap *Snapshot) []Finding {
 	if len(snap.Reviews) < ThresholdHookWeakChain {
 		return nil
@@ -122,13 +124,13 @@ func HookWeakChain(snap *Snapshot) []Finding {
 		Confidence: ConfMedium,
 		AutoLevel:  AutoNone,
 		Target:     "prompt.writer",
-		Title:      fmt.Sprintf("章末钩子连续偏弱（连续 %d 章）", len(weakChain)),
+		Title:      i18n.Tf("diag.quality.hook_weak.title", len(weakChain)),
 		Evidence:   strings.Join(parts, ", "),
-		Suggestion: "检查 writer.md 中 hook_goal 的执行是否清晰，必要时在 plan_chapter 中明确本章追读欲望，并校准 Editor 对 hook 的举证标准。",
+		Suggestion: i18n.T("diag.quality.hook_weak.suggestion"),
 	}}
 }
 
-// PayoffMissPattern 检测带 payoff_points 的章节长期未兑现。
+// PayoffMissPattern phát hiện chương có payoff_points lâu ngày không hoàn trả.
 func PayoffMissPattern(snap *Snapshot) []Finding {
 	var total, missed int
 	var details []string
@@ -143,7 +145,7 @@ func PayoffMissPattern(snap *Snapshot) []Finding {
 		total++
 		if review.ContractStatus == "partial" || review.ContractStatus == "missed" {
 			missed++
-			details = append(details, fmt.Sprintf("ch%d(%d项 payoff)", ch, len(plan.Contract.PayoffPoints)))
+			details = append(details, i18n.Tf("diag.quality.payoff_miss.detail", ch, len(plan.Contract.PayoffPoints)))
 		}
 	}
 	if total < 2 {
@@ -161,13 +163,13 @@ func PayoffMissPattern(snap *Snapshot) []Finding {
 		Confidence: ConfMedium,
 		AutoLevel:  AutoNone,
 		Target:     "prompt.writer",
-		Title:      fmt.Sprintf("爽点/情节点兑现率偏低 (%.0f%% 未达成)", rate*100),
-		Evidence:   fmt.Sprintf("未兑现章节: [%s]，共 %d/%d", strings.Join(details, ", "), missed, total),
-		Suggestion: "检查 plan_chapter 的 payoff_points 是否过多或过空，确保 Writer 在正文里明确兑现，而不是只做铺垫。",
+		Title:      i18n.Tf("diag.quality.payoff_miss.title", rate*100),
+		Evidence:   i18n.Tf("diag.quality.payoff_miss.evidence", strings.Join(details, ", "), missed, total),
+		Suggestion: i18n.T("diag.quality.payoff_miss.suggestion"),
 	}}
 }
 
-// ExcessiveRewrites 检测改写率过高。
+// ExcessiveRewrites phát hiện tỉ lệ viết lại quá cao.
 func ExcessiveRewrites(snap *Snapshot) []Finding {
 	if len(snap.Reviews) < 2 {
 		return nil
@@ -194,13 +196,13 @@ func ExcessiveRewrites(snap *Snapshot) []Finding {
 		Confidence: ConfMedium,
 		AutoLevel:  AutoNone,
 		Target:     "prompt.editor",
-		Title:      fmt.Sprintf("改写率过高 (%d/%d = %.0f%%)", rewrites, total, rate*100),
-		Evidence:   fmt.Sprintf("共 %d 次评审，%d 次 rewrite", total, rewrites),
-		Suggestion: "Writer 持续产出低于 Editor 阈值的内容。检查 Writer prompt 的质量标准是否与 Editor 的评审标准对齐。",
+		Title:      i18n.Tf("diag.quality.excessive_rewrites.title", rewrites, total, rate*100),
+		Evidence:   i18n.Tf("diag.quality.excessive_rewrites.evidence", total, rewrites),
+		Suggestion: i18n.T("diag.quality.excessive_rewrites.suggestion"),
 	}}
 }
 
-// WordCountAnomaly 检测章节字数异常。
+// WordCountAnomaly phát hiện số chữ chương bất thường.
 func WordCountAnomaly(snap *Snapshot) []Finding {
 	if snap.Progress == nil || len(snap.Progress.ChapterWordCounts) < 3 {
 		return nil
@@ -220,9 +222,9 @@ func WordCountAnomaly(snap *Snapshot) []Finding {
 	for ch, w := range wc {
 		ratio := float64(w) / avg
 		if ratio < ThresholdWordShortRatio {
-			anomalies = append(anomalies, fmt.Sprintf("ch%d(%d字,%.0f%%)", ch, w, ratio*100))
+			anomalies = append(anomalies, i18n.Tf("diag.quality.word_anomaly.detail", ch, w, ratio*100))
 		} else if ratio > ThresholdWordLongRatio {
-			anomalies = append(anomalies, fmt.Sprintf("ch%d(%d字,%.0f%%)", ch, w, ratio*100))
+			anomalies = append(anomalies, i18n.Tf("diag.quality.word_anomaly.detail", ch, w, ratio*100))
 		}
 	}
 	if len(anomalies) == 0 {
@@ -235,9 +237,9 @@ func WordCountAnomaly(snap *Snapshot) []Finding {
 		Confidence: ConfLow,
 		AutoLevel:  AutoNone,
 		Target:     "context.window",
-		Title:      fmt.Sprintf("章节字数异常 (均值 %d 字)", int(math.Round(avg))),
+		Title:      i18n.Tf("diag.quality.word_anomaly.title", int(math.Round(avg))),
 		Evidence:   strings.Join(anomalies, "; "),
-		Suggestion: "极短章节可能是输出截断（token 限制），极长章节可能消耗过多上下文窗口。检查模型 max_tokens 配置。",
+		Suggestion: i18n.T("diag.quality.word_anomaly.suggestion"),
 	}}
 }
 

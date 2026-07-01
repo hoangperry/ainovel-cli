@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/voocel/ainovel-cli/internal/i18n"
 )
 
 type UpdateOptions struct {
@@ -41,7 +44,7 @@ type releaseAsset struct {
 
 func Update(ctx context.Context, opts UpdateOptions) (*UpdateResult, error) {
 	if runtime.GOOS == "windows" {
-		return nil, fmt.Errorf("Windows 不支持原地自更新，请到 https://github.com/%s/releases 下载新版", opts.Repo)
+		return nil, fmt.Errorf(i18n.T("cli.update.windows_unsupported"), opts.Repo)
 	}
 	if opts.Repo == "" {
 		return nil, fmt.Errorf("missing repo")
@@ -59,7 +62,7 @@ func Update(ctx context.Context, opts UpdateOptions) (*UpdateResult, error) {
 		return nil, err
 	}
 	if rel.TagName == "" {
-		return nil, fmt.Errorf("release 缺少 tag_name")
+		return nil, errors.New(i18n.T("cli.update.release_no_tag"))
 	}
 	if sameVersion(opts.CurrentVersion, rel.TagName) {
 		return &UpdateResult{Version: rel.TagName, Path: executablePath()}, nil
@@ -133,7 +136,7 @@ func selectAsset(rel *release, binaryName string) (releaseAsset, error) {
 			return asset, nil
 		}
 	}
-	return releaseAsset{}, fmt.Errorf("release %s 未找到当前平台安装包 *%s", rel.TagName, suffix)
+	return releaseAsset{}, fmt.Errorf(i18n.T("cli.update.no_asset"), rel.TagName, suffix)
 }
 
 func assetSuffix() (string, error) {
@@ -144,7 +147,7 @@ func assetSuffix() (string, error) {
 	case "linux":
 		osName = "Linux"
 	default:
-		return "", fmt.Errorf("不支持的系统 %s", runtime.GOOS)
+		return "", fmt.Errorf(i18n.T("cli.update.unsupported_os"), runtime.GOOS)
 	}
 	var arch string
 	switch runtime.GOARCH {
@@ -153,7 +156,7 @@ func assetSuffix() (string, error) {
 	case "arm64":
 		arch = "arm64"
 	default:
-		return "", fmt.Errorf("不支持的架构 %s", runtime.GOARCH)
+		return "", fmt.Errorf(i18n.T("cli.update.unsupported_arch"), runtime.GOARCH)
 	}
 	return "_" + osName + "_" + arch + ".tar.gz", nil
 }
@@ -219,7 +222,7 @@ func extractBinary(archivePath, dstDir, binaryName string) (string, error) {
 		}
 		return out, nil
 	}
-	return "", fmt.Errorf("安装包中未找到 %s", binaryName)
+	return "", fmt.Errorf(i18n.T("cli.update.binary_not_found"), binaryName)
 }
 
 func replaceCurrentExecutable(src string) (string, error) {
@@ -228,7 +231,7 @@ func replaceCurrentExecutable(src string) (string, error) {
 
 func replaceExecutable(dst, src string) (string, error) {
 	if dst == "" {
-		return "", fmt.Errorf("无法定位当前可执行文件")
+		return "", errors.New(i18n.T("cli.update.locate_exe_failed"))
 	}
 	if real, err := filepath.EvalSymlinks(dst); err == nil {
 		dst = real

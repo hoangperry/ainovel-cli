@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/voocel/ainovel-cli/internal/host"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 )
 
 type modelSwitchFocus int
@@ -23,25 +25,28 @@ type modelRoleOption struct {
 	Label string
 }
 
+// Label rỗng nghĩa là nhãn hiển thị do i18n quyết định lúc render (qua roleLabel),
+// tránh chốt cứng locale lúc init var. Tên role kỹ thuật (Coordinator...) giữ literal.
 var modelRoleOptions = []modelRoleOption{
-	{Key: "default", Label: "默认"},
+	{Key: "default", Label: ""},
 	{Key: "coordinator", Label: "Coordinator"},
 	{Key: "architect", Label: "Architect"},
 	{Key: "writer", Label: "Writer"},
 	{Key: "editor", Label: "Editor"},
 }
 
-type thinkingOption struct{ Key, Label string }
+// thinkingOption.LabelKey là i18n key; nhãn hiển thị resolve lúc render (thinkingLabel).
+type thinkingOption struct{ Key, LabelKey string }
 
 var allThinkingOptions = []thinkingOption{
-	{"", "默认(继承)"},
-	{"off", "关闭"},
-	{"minimal", "最小"},
-	{"low", "低"},
-	{"medium", "中"},
-	{"high", "高"},
-	{"xhigh", "极高"},
-	{"max", "最高"},
+	{"", "ui.model.thinking.inherit"},
+	{"off", "ui.model.thinking.off"},
+	{"minimal", "ui.model.thinking.minimal"},
+	{"low", "ui.model.thinking.low"},
+	{"medium", "ui.model.thinking.medium"},
+	{"high", "ui.model.thinking.high"},
+	{"xhigh", "ui.model.thinking.xhigh"},
+	{"max", "ui.model.thinking.max"},
 }
 
 func thinkingOptionsFor(rt *host.Host, role string) []thinkingOption {
@@ -72,7 +77,7 @@ func thinkingIndexOf(options []thinkingOption, level string) int {
 			return i
 		}
 	}
-	return 0 // 未知值 → 继承
+	return 0 // giá trị không xác định → kế thừa
 }
 
 type modelSwitchState struct {
@@ -92,7 +97,7 @@ func newModelSwitchState(rt *host.Host, roleHint string) *modelSwitchState {
 		providers: rt.ConfiguredProviders(),
 	}
 	if len(state.providers) == 0 {
-		state.message = "当前没有可用 provider"
+		state.message = i18n.T("ui.model.no_provider")
 	}
 
 	roleHint = normalizeRoleKey(roleHint)
@@ -122,7 +127,10 @@ func (s *modelSwitchState) role() string {
 }
 
 func (s *modelSwitchState) roleLabel() string {
-	return modelRoleOptions[s.roleIdx].Label
+	if label := modelRoleOptions[s.roleIdx].Label; label != "" {
+		return label
+	}
+	return i18n.T("ui.model.role.default")
 }
 
 func (s *modelSwitchState) provider() string {
@@ -148,9 +156,9 @@ func (s *modelSwitchState) thinkingKey() string {
 
 func (s *modelSwitchState) thinkingLabel() string {
 	if s.thinkingIdx < 0 || s.thinkingIdx >= len(s.thinking) {
-		return allThinkingOptions[0].Label
+		return i18n.T(allThinkingOptions[0].LabelKey)
 	}
-	return s.thinking[s.thinkingIdx].Label
+	return i18n.T(s.thinking[s.thinkingIdx].LabelKey)
 }
 
 func (s *modelSwitchState) moveFocus(delta int) {
@@ -224,16 +232,16 @@ func (s *modelSwitchState) syncThinking(rt *host.Host) {
 
 func (s *modelSwitchState) apply(rt *host.Host) error {
 	if len(s.providers) == 0 {
-		return fmt.Errorf("当前没有可用 provider")
+		return errors.New(i18n.T("ui.model.no_provider"))
 	}
 	if len(s.models) == 0 {
-		return fmt.Errorf("provider %q 没有已配置模型", s.provider())
+		return fmt.Errorf(i18n.T("ui.model.provider_no_model"), s.provider())
 	}
 	if err := rt.SwitchModel(s.role(), s.provider(), s.model()); err != nil {
 		return err
 	}
 	s.syncThinking(rt)
-	// 思考强度与模型正交：仅当较当前值有变化时应用，避免冗余持久化/事件。
+	// Cường độ thinking trực giao với model: chỉ áp dụng khi khác giá trị hiện tại, tránh persist/event dư thừa.
 	if want := s.thinkingKey(); want != strings.ToLower(strings.TrimSpace(rt.CurrentThinking(s.role()))) {
 		if err := rt.SetRoleThinking(s.role(), want); err != nil {
 			return err
@@ -284,16 +292,16 @@ func renderModelSwitchBar(width int, state *modelSwitchState) string {
 	title := lipgloss.NewStyle().
 		Foreground(colorMuted).
 		Bold(true).
-		Render("/model 切换模型")
+		Render(i18n.T("ui.model.title"))
 
-	row1 := renderModelField("角色", state.roleLabel(), state.focus == modelFocusRole)
+	row1 := renderModelField(i18n.T("ui.model.field.role"), state.roleLabel(), state.focus == modelFocusRole)
 	row2 := renderModelField("Provider", state.provider(), state.focus == modelFocusProvider)
-	row3 := renderModelField("模型", state.model(), state.focus == modelFocusModel)
-	row4 := renderModelField("思考", state.thinkingLabel(), state.focus == modelFocusThinking)
+	row3 := renderModelField(i18n.T("ui.model.field.model"), state.model(), state.focus == modelFocusModel)
+	row4 := renderModelField(i18n.T("ui.model.field.thinking"), state.thinkingLabel(), state.focus == modelFocusThinking)
 	hint := lipgloss.NewStyle().
 		Foreground(colorDim).
 		Italic(true).
-		Render("Tab 切字段   ←→ 切选项   Enter 应用   Esc 取消")
+		Render(i18n.T("ui.model.bar.hint"))
 	lines := []string{
 		row1,
 		row2,
@@ -344,7 +352,7 @@ func renderModelSwitchBar(width int, state *modelSwitchState) string {
 
 func renderModelField(label, value string, focused bool) string {
 	if strings.TrimSpace(value) == "" {
-		value = "未设置"
+		value = i18n.T("ui.model.field.unset")
 	}
 	labelText := lipgloss.NewStyle().
 		Foreground(colorMuted).

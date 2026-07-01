@@ -1,11 +1,22 @@
 package host
 
 import (
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 )
 
-// feedAll 一次性喂入，返回累积输出。
+// TestMain ghim locale nội dung về "zh" cho toàn bộ test gói host: các assertion hiện có
+// đối chiếu nguyên văn chuỗi zh (header panel, báo cáo ngân sách, lỗi guardExclusive...),
+// trong khi mặc định runtime là "vi". Đặt một lần ở đây giữ mọi test xanh.
+func TestMain(m *testing.M) {
+	contentlang.Set("zh")
+	os.Exit(m.Run())
+}
+
+// feedAll nạp một lần, trả về output tích lũy.
 func feedAll(t *testing.T, tool, input string) string {
 	t.Helper()
 	e := newToolExtractor(tool)
@@ -15,7 +26,7 @@ func feedAll(t *testing.T, tool, input string) string {
 	return e.Feed(input)
 }
 
-// feedChunked 按指定字节数分片喂入，验证流式与一次喂入结果一致。
+// feedChunked nạp theo lát cắt với số byte chỉ định, kiểm chứng stream và nạp một lần cho kết quả giống nhau.
 func feedChunked(t *testing.T, tool, input string, chunk int) string {
 	t.Helper()
 	e := newToolExtractor(tool)
@@ -44,7 +55,7 @@ func mustNotContain(t *testing.T, got, want string) {
 	}
 }
 
-// ── 通用模式：扁平 obj ──
+// ── chế độ tổng quát: obj phẳng ──
 
 func TestExtract_PlanChapter(t *testing.T) {
 	in := `{"chapter":1,"title":"卖身契","goal":"建立矿场基线","conflict":"父债","hook":"灰矿","emotion_arc":"压抑"}`
@@ -58,7 +69,7 @@ func TestExtract_PlanChapter(t *testing.T) {
 	mustContain(t, out, "emotion_arc: 压抑")
 }
 
-// ── 通用模式：嵌套 obj + 数组 ──
+// ── chế độ tổng quát: obj lồng + array ──
 
 func TestExtract_FoundationCharacters(t *testing.T) {
 	in := `{"type":"characters","scale":"long","content":[` +
@@ -69,7 +80,7 @@ func TestExtract_FoundationCharacters(t *testing.T) {
 	mustContain(t, out, "✻ 设定")
 	mustContain(t, out, "type: characters")
 	mustContain(t, out, "scale: long")
-	// 通用渲染：所有字段都展示，包括之前被白名单跳过的 aliases / traits
+	// Render tổng quát: mọi field đều hiển thị, gồm cả aliases / traits trước đây bị whitelist bỏ qua
 	mustContain(t, out, "name: 沈砺")
 	mustContain(t, out, "role: 主角")
 	mustContain(t, out, "aliases:")
@@ -91,17 +102,17 @@ func TestExtract_FoundationLayeredOutline(t *testing.T) {
 		`]}]}]}`
 	out := feedAll(t, "save_foundation", in)
 	mustContain(t, out, "type: layered_outline")
-	// 卷
+	// quyển
 	mustContain(t, out, "index: 1")
 	mustContain(t, out, "title: 矿火微明")
-	// 弧
+	// cung truyện
 	mustContain(t, out, "title: 乌鳞矿役")
 	mustContain(t, out, "goal: 求活")
-	// 章
+	// chương
 	mustContain(t, out, "chapter: 1")
 	mustContain(t, out, "title: 卖身契")
 	mustContain(t, out, "core_event: 被卖入矿场。")
-	// 嵌套缩进体现层级
+	// Thụt lề lồng thể hiện phân cấp
 	mustContain(t, out, "arcs:\n")
 	mustContain(t, out, "chapters:\n")
 }
@@ -117,7 +128,7 @@ func TestExtract_FoundationUpdateCompass(t *testing.T) {
 	mustContain(t, out, "- 活人票账簿")
 }
 
-// ── save_review：含数组对象 + 数字数组 ──
+// ── save_review: chứa object trong array + array số ──
 
 func TestExtract_SaveReview(t *testing.T) {
 	in := `{"chapter":3,"scope":"chapter","verdict":"polish","summary":"节奏略慢。","dimensions":[{"dimension":"hook","score":55,"verdict":"fail"}],"issues":[{"type":"hook","severity":"error","description":"章末缺钩子。"}],"affected_chapters":[3,4]}`
@@ -135,7 +146,7 @@ func TestExtract_SaveReview(t *testing.T) {
 	mustContain(t, out, "- 4")
 }
 
-// ── commit_chapter：复杂嵌套 ──
+// ── commit_chapter: lồng phức tạp ──
 
 func TestExtract_CommitChapter(t *testing.T) {
 	in := `{"chapter":1,"summary":"被卖入矿场。","characters":["沈砺","母亲"],"key_events":["签卖身契"],"foreshadow_updates":[{"id":"f1","action":"plant","description":"灰矿发烫。"}],"state_changes":[{"entity":"沈砺","field":"身份","old_value":"采药少年","new_value":"矿场杂役"}]}`
@@ -154,7 +165,7 @@ func TestExtract_CommitChapter(t *testing.T) {
 	mustContain(t, out, "new_value: 矿场杂役")
 }
 
-// ── edit_chapter：通用模式 + 多行 string ──
+// ── edit_chapter: chế độ tổng quát + string nhiều dòng ──
 
 func TestExtract_EditChapter(t *testing.T) {
 	in := `{"chapter":24,"old_string":"沈砺低头不语。\n他攥紧了拳头。","new_string":"沈砺没有抬头，喉结滚动一下。\n指节攥得发白。","replace_all":false}`
@@ -166,7 +177,7 @@ func TestExtract_EditChapter(t *testing.T) {
 	mustContain(t, out, "replace_all: false")
 }
 
-// ── 读类工具：args 信息密度低但 header + 关键字段仍应可见 ──
+// ── tool loại đọc: mật độ thông tin args thấp nhưng header + field then chốt vẫn phải thấy được ──
 
 func TestExtract_ReadChapter(t *testing.T) {
 	in := `{"chapter":234,"source":"final"}`
@@ -182,8 +193,8 @@ func TestExtract_CheckConsistency(t *testing.T) {
 	mustContain(t, out, "chapter: 234")
 }
 
-// 空 args 兜底：coordinator 调 novel_context 不传参时 args 是 {}，
-// 不能完全静默，至少要输出 header 让用户感知调用。
+// Lưới đỡ cho args rỗng: khi coordinator gọi novel_context không truyền tham số thì args là {},
+// không thể im lặng hoàn toàn, ít nhất phải xuất header cho người dùng cảm nhận có lần gọi.
 func TestExtract_NovelContextEmptyArgs(t *testing.T) {
 	out := feedAll(t, "novel_context", `{}`)
 	mustContain(t, out, "✻ 查询上下文")
@@ -195,12 +206,12 @@ func TestExtract_NovelContextWithChapter(t *testing.T) {
 	mustContain(t, out, "chapter: 234")
 }
 
-// ── 裸流模式 ──
+// ── chế độ stream trần ──
 
 func TestExtract_DraftChapterRawMarkdown(t *testing.T) {
 	in := `{"chapter":1,"content":"# 第一章\n\n沈砺站在矿口。\n"}`
 	out := feedAll(t, "draft_chapter", in)
-	// 裸流：无装饰、无 key prefix
+	// Stream trần: không trang trí, không key prefix
 	mustNotContain(t, out, "【")
 	mustNotContain(t, out, "content:")
 	mustNotContain(t, out, "chapter:")
@@ -209,7 +220,7 @@ func TestExtract_DraftChapterRawMarkdown(t *testing.T) {
 }
 
 func TestExtract_DraftChapterIgnoresOtherFields(t *testing.T) {
-	// content 之外的字段应被静默跳过，不污染输出
+	// Field ngoài content phải bị bỏ qua âm thầm, không làm ô nhiễm output
 	in := `{"chapter":7,"summary":"meta","content":"正文","extra_array":[1,2,3]}`
 	out := feedAll(t, "draft_chapter", in)
 	mustContain(t, out, "正文")
@@ -219,7 +230,7 @@ func TestExtract_DraftChapterIgnoresOtherFields(t *testing.T) {
 	mustNotContain(t, out, "1")
 }
 
-// ── 行为不变量 ──
+// ── bất biến hành vi ──
 
 func TestExtract_UnknownTool(t *testing.T) {
 	if e := newToolExtractor("nonexistent_tool"); e != nil {
@@ -235,9 +246,9 @@ func TestExtract_DoneAfterClose(t *testing.T) {
 	}
 }
 
-// ── 流式分片不变性 ──
+// ── bất biến khi chia lát stream ──
 
-// 同一份输入按 1/3/7/13 字节分片，输出应与一次喂入完全相同。
+// Cùng một input chia lát theo 1/3/7/13 byte, output phải giống hệt nạp một lần.
 func TestExtract_ChunkedEqualsWhole(t *testing.T) {
 	cases := []struct {
 		tool  string
@@ -260,7 +271,7 @@ func TestExtract_ChunkedEqualsWhole(t *testing.T) {
 	}
 }
 
-// ── 转义与 Unicode ──
+// ── escape và Unicode ──
 
 func TestExtract_EscapeSequences(t *testing.T) {
 	in := `{"goal":"行1\n行2 \"引号\" \\反斜线 中字"}`
@@ -272,13 +283,13 @@ func TestExtract_EscapeSequences(t *testing.T) {
 }
 
 func TestExtract_UnicodeEscape(t *testing.T) {
-	// 中 = 中
+	// ví dụ ký tự CJK giữ nguyên
 	in := `{"goal":"中文"}`
 	out := feedAll(t, "plan_chapter", in)
 	mustContain(t, out, "中文")
 }
 
-// ── 空容器 / 简单结构 ──
+// ── container rỗng / cấu trúc đơn giản ──
 
 func TestExtract_EmptyArrays(t *testing.T) {
 	in := `{"key_events":[],"characters":["沈砺"]}`
@@ -296,10 +307,10 @@ func TestExtract_BoolAndNull(t *testing.T) {
 	mustContain(t, out, "description: null")
 }
 
-// ── 边角场景：数组嵌数组、深层嵌套 ──
+// ── kịch bản góc cạnh: array lồng array, lồng sâu ──
 
 func TestExtract_NestedArrays(t *testing.T) {
-	// affected_chapters 是 int 数组；这里换成数组嵌数组验证
+	// affected_chapters là array int; ở đây đổi thành array lồng array để kiểm chứng
 	in := `{"summary":"x","key_events":[],"characters":["a"],"foreshadow_updates":[],"relationship_changes":[]}`
 	out := feedAll(t, "commit_chapter", in)
 	mustContain(t, out, "summary: x")
@@ -320,10 +331,10 @@ func TestExtract_DeeplyNested(t *testing.T) {
 	}
 }
 
-// ── chunk 切在 utf-8 多字节中间 ──
+// ── chunk cắt giữa ký tự utf-8 nhiều byte ──
 
 func TestExtract_ChunkSplitInUTF8(t *testing.T) {
-	// "中" 是 3 字节 (E4 B8 AD)。把切片大小定到 1，确保每个 byte 单独喂入。
+	// "中" là 3 byte (E4 B8 AD). Đặt kích thước lát cắt thành 1, bảo đảm mỗi byte được nạp riêng.
 	in := `{"goal":"中文测试"}`
 	whole := feedAll(t, "plan_chapter", in)
 	chunked := feedChunked(t, "plan_chapter", in, 1)
@@ -333,20 +344,20 @@ func TestExtract_ChunkSplitInUTF8(t *testing.T) {
 	mustContain(t, chunked, "中文测试")
 }
 
-// ── 裸流模式：嵌套 obj 内同名 key 不应误命中 ──
+// ── chế độ stream trần: key cùng tên trong obj lồng không nên trúng nhầm ──
 
 func TestExtract_NakedKeyOnlyTopLevel(t *testing.T) {
-	// "content" 出现在两处：嵌套对象内 + 顶层。只有顶层那个应被流出。
+	// "content" xuất hiện ở hai chỗ: trong object lồng + cấp đỉnh. Chỉ cái ở cấp đỉnh được stream ra.
 	in := `{"meta":{"content":"嵌套不应输出"},"content":"顶层应输出"}`
 	out := feedAll(t, "draft_chapter", in)
 	mustContain(t, out, "顶层应输出")
 	mustNotContain(t, out, "嵌套不应输出")
 }
 
-// ── 裸流模式：content 是非 string 时全跳过 ──
+// ── chế độ stream trần: khi content không phải string thì bỏ qua hết ──
 
 func TestExtract_NakedKeyNonStringValue(t *testing.T) {
-	// content 错写成对象（不应该发生但要容忍）
+	// content bị viết nhầm thành object (không nên xảy ra nhưng phải dung thứ)
 	in := `{"content":{"unexpected":true}}`
 	out := feedAll(t, "draft_chapter", in)
 	if out != "" {
@@ -354,7 +365,7 @@ func TestExtract_NakedKeyNonStringValue(t *testing.T) {
 	}
 }
 
-// ── 顶层闭合后再 Feed 不再产出 ──
+// ── sau khi cấp đỉnh đóng thì Feed nữa không còn sinh output ──
 
 func TestExtract_FeedAfterDone(t *testing.T) {
 	e := newToolExtractor("plan_chapter")
@@ -367,7 +378,7 @@ func TestExtract_FeedAfterDone(t *testing.T) {
 	}
 }
 
-// ── 空 chunk / 空 input ──
+// ── chunk rỗng / input rỗng ──
 
 func TestExtract_EmptyFeed(t *testing.T) {
 	e := newToolExtractor("plan_chapter")
@@ -379,7 +390,7 @@ func TestExtract_EmptyFeed(t *testing.T) {
 	}
 }
 
-// ── 数组里直接嵌数组（不经过 obj） ──
+// ── array lồng thẳng array (không qua obj) ──
 
 func TestExtract_ArrayOfArrays(t *testing.T) {
 	in := `{"matrix":[[1,2],[3,4]]}`
@@ -391,10 +402,10 @@ func TestExtract_ArrayOfArrays(t *testing.T) {
 	mustContain(t, out, "- 4")
 }
 
-// ── number 后空格再分隔符 ──
+// ── number theo sau là dấu cách rồi dấu phân tách ──
 
 func TestExtract_NumberWithTrailingSpace(t *testing.T) {
-	// "chapter": 1 ,  ← 数字前后多空格
+	// "chapter": 1 ,  ← thừa dấu cách trước và sau số
 	in := `{ "chapter" : 1 , "title" : "x" }`
 	out := feedAll(t, "plan_chapter", in)
 	mustContain(t, out, "chapter: 1")

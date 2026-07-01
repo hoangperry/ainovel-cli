@@ -7,11 +7,14 @@ import (
 
 	"github.com/voocel/agentcore"
 	corecontext "github.com/voocel/agentcore/context"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 )
 
 func TestStoreSummaryCompactApplyUsesPersistentStoreData(t *testing.T) {
+	contentlang.Set("zh")
+	t.Cleanup(func() { contentlang.Set("vi") })
 	s := seededWriterStore(t)
 	strategy := NewStoreSummaryCompact(StoreSummaryCompactConfig{
 		Store:              s,
@@ -53,16 +56,16 @@ func TestStoreSummaryCompactApplyUsesPersistentStoreData(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected ContextSummary, got %T", out[0])
 	}
-	if !strings.Contains(summary.Summary, "最近章节摘要") {
+	if !strings.Contains(summary.Summary, contentlang.Pick("最近章节摘要", "Tóm tắt chương gần đây")) {
 		t.Fatalf("expected persistent summaries in checkpoint, got %q", summary.Summary)
 	}
-	if !strings.Contains(summary.Summary, "当前章节计划") {
+	if !strings.Contains(summary.Summary, contentlang.Pick("当前章节计划", "Kế hoạch chương hiện tại")) {
 		t.Fatalf("expected chapter plan in checkpoint, got %q", summary.Summary)
 	}
-	if !strings.Contains(summary.Summary, "活跃伏笔") {
+	if !strings.Contains(summary.Summary, contentlang.Pick("活跃伏笔", "Phục bút đang hoạt động")) {
 		t.Fatalf("expected foreshadow data in checkpoint, got %q", summary.Summary)
 	}
-	if !strings.Contains(summary.Summary, "待修审稿问题") {
+	if !strings.Contains(summary.Summary, contentlang.Pick("待修审稿问题", "Vấn đề thẩm định chờ sửa")) {
 		t.Fatalf("expected pending review section in checkpoint, got %q", summary.Summary)
 	}
 	if !strings.Contains(summary.Summary, "仓库线索需要再蓄压一拍") {
@@ -114,6 +117,8 @@ func TestStoreSummaryCompactApplyFallsBackWhenStoreDataInsufficient(t *testing.T
 }
 
 func TestWriterRestorePackRefreshReusesStoreBuilder(t *testing.T) {
+	contentlang.Set("zh")
+	t.Cleanup(func() { contentlang.Set("vi") })
 	s := seededWriterStore(t)
 	pack := &WriterRestorePack{}
 	pack.Refresh(s)
@@ -126,10 +131,10 @@ func TestWriterRestorePackRefreshReusesStoreBuilder(t *testing.T) {
 	if !strings.Contains(text, "<post-compact-context>") {
 		t.Fatalf("expected wrapped restore context, got %q", text)
 	}
-	if !strings.Contains(text, "待修审稿问题") {
+	if !strings.Contains(text, contentlang.Pick("待修审稿问题", "Vấn đề thẩm định chờ sửa")) {
 		t.Fatalf("expected pending review section, got %q", text)
 	}
-	if !strings.Contains(text, "当前章节计划") {
+	if !strings.Contains(text, contentlang.Pick("当前章节计划", "Kế hoạch chương hiện tại")) {
 		t.Fatalf("expected chapter plan section, got %q", text)
 	}
 }

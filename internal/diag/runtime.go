@@ -14,57 +14,58 @@ import (
 	"strings"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
 const (
-	logTailCap   = 200 << 10 // 日志只取尾部 200KB（循环是近端现象）
-	sessionTail  = 80        // 骨架尾巴条数（看派发先后顺序）
-	repeatWindow = 150       // 重复聚合只看近端这么多条事件——长跑里正常工具累计上百次，
-	// 真循环是近端高度集中；用窗口而非累计，避免把"正常推进"误判成"死循环"。
-	recentAgents = 2  // 额外扫描最近活跃的子代理会话数
-	repeatMin    = 3  // 重复达到几次才算"高频信号"
-	repeatTopN   = 12 // 重复签名最多列几条
+	logTailCap   = 200 << 10 // Log chỉ lấy phần đuôi 200KB (vòng lặp là hiện tượng cận điểm)
+	sessionTail  = 80        // Số dòng phần đuôi khung (để xem thứ tự trước sau của việc điều phối)
+	repeatWindow = 150       // Tổng hợp trùng lặp chỉ nhìn ngần này sự kiện cận điểm — chạy dài thì tool bình thường tích luỹ cả trăm lần,
+	// vòng lặp thật là tập trung cao độ ở cận điểm; dùng cửa sổ thay vì tích luỹ, tránh phán nhầm "tiến triển bình thường" thành "lặp chết".
+	recentAgents = 2  // Số session subagent hoạt động gần nhất quét thêm
+	repeatMin    = 3  // Trùng lặp đạt mấy lần mới tính là "tín hiệu tần suất cao"
+	repeatTopN   = 12 // Vân tay trùng lặp liệt kê tối đa mấy dòng
 )
 
-// RuntimeCapture 是一次运行时抓取的脱敏结果。只承载运行时信号；
-// phase/flow/章节等创作态由 Report.Stats 携带，不在此重复。
+// RuntimeCapture là kết quả khử nhạy cảm của một lần capture trạng thái chạy. Chỉ chứa tín hiệu trạng thái chạy;
+// trạng thái sáng tác như phase/flow/chương do Report.Stats mang, không lặp lại ở đây.
 type RuntimeCapture struct {
 	GoOS, GoArch  string
-	Models        []RoleModel  // 各会话实际生效的 provider/model（从 _meta 收集）
-	CurrentStep   string       // 最新 checkpoint：scope.step
-	StuckStep     string       // 尾部连续同 step；"" = 不卡
-	StuckCount    int          // 连续次数
-	Repeats       []RepeatStat // 重复签名 top-N（循环信号）
-	DupContent    []DupStat    // 同 sha 文本反复出现（反复生成同段）
+	Models        []RoleModel  // provider/model thực tế có hiệu lực của mỗi session (thu từ _meta)
+	CurrentStep   string       // checkpoint mới nhất: scope.step
+	StuckStep     string       // Phần đuôi liên tiếp cùng step; "" = không kẹt
+	StuckCount    int          // Số lần liên tiếp
+	Repeats       []RepeatStat // Vân tay trùng lặp top-N (tín hiệu vòng lặp)
+	DupContent    []DupStat    // Văn bản cùng sha xuất hiện lặp đi lặp lại (sinh lặp cùng một đoạn)
 	LogKinds      map[string]int
 	LogErrors     int
 	LogWarns      int
 	StopGuard     int
-	Tail          []SkelEvent // 末 N 条骨架（看顺序）
-	RedactedTexts int         // 打码文本块总数（脱敏自检）
-	Sources       []string    // 实际读到的源（自检）
+	Tail          []SkelEvent // N khung cuối (để xem thứ tự)
+	RedactedTexts int         // Tổng số khối văn bản đã che (tự kiểm khử nhạy cảm)
+	Sources       []string    // Nguồn thực tế đọc được (tự kiểm)
 }
 
-// RoleModel 记录某会话实际用的 provider/model。
+// RoleModel ghi lại provider/model một session thực sự dùng.
 type RoleModel struct {
 	Agent, Provider, Model string
 }
 
-// RepeatStat 是一条重复签名及其次数。
+// RepeatStat là một vân tay trùng lặp kèm số lần.
 type RepeatStat struct {
 	Sig   string
 	Count int
 }
 
-// DupStat 是同一段脱敏文本反复出现的次数。
+// DupStat là số lần một đoạn văn bản đã khử nhạy cảm xuất hiện lặp lại.
 type DupStat struct {
 	Sha   string
 	Count int
 }
 
-// sessionLine 解析 sessions/*.jsonl 的一行：内嵌 agentcore.Message + 可选 _meta。
+// sessionLine phân giải một dòng của sessions/*.jsonl: agentcore.Message nhúng + _meta tuỳ chọn.
 type sessionLine struct {
 	agentcore.Message
 	Meta *struct {
@@ -75,8 +76,8 @@ type sessionLine struct {
 
 var kindRe = regexp.MustCompile(`kind=(\S+)`)
 
-// CaptureRuntime 从 output 目录只读抓取运行时信号并脱敏聚合。
-// 任何源缺失都安全降级（不报错），尽力而为。
+// CaptureRuntime đọc-chỉ-đọc các tín hiệu trạng thái chạy từ thư mục output rồi tổng hợp đã khử nhạy cảm.
+// Nguồn nào thiếu cũng hạ cấp an toàn (không báo lỗi), best-effort.
 func CaptureRuntime(s *store.Store) RuntimeCapture {
 	rc := RuntimeCapture{GoOS: runtime.GOOS, GoArch: runtime.GOARCH, LogKinds: map[string]int{}}
 
@@ -86,7 +87,7 @@ func CaptureRuntime(s *store.Store) RuntimeCapture {
 	return rc
 }
 
-// analyzeCheckpoints 取最新 step，并算尾部连续同 step（卡住信号）。
+// analyzeCheckpoints lấy step mới nhất, và tính phần đuôi liên tiếp cùng step (tín hiệu kẹt).
 func analyzeCheckpoints(cps []domain.Checkpoint) (current, stuck string, count int) {
 	if len(cps) == 0 {
 		return "", "", 0
@@ -107,7 +108,7 @@ func analyzeCheckpoints(cps []domain.Checkpoint) (current, stuck string, count i
 	return current, stuck, count
 }
 
-// captureSessions 扫描 coordinator + 最近子代理会话，脱敏聚合。
+// captureSessions quét coordinator + session subagent gần nhất, tổng hợp đã khử nhạy cảm.
 func captureSessions(dir string, rc *RuntimeCapture) {
 	sessDir := filepath.Join(dir, "meta", "sessions")
 	files := sessionFiles(sessDir)
@@ -118,17 +119,17 @@ func captureSessions(dir string, rc *RuntimeCapture) {
 
 	for _, f := range files {
 		evs := scanSession(filepath.Join(sessDir, f.path), f.agent, rc, models)
-		// 聚合只看近端窗口：长跑里 subagent/novel_context 累计上百次是正常推进，
-		// 不是循环；真死循环是近端高度集中。
+		// Tổng hợp chỉ nhìn cửa sổ cận điểm: chạy dài thì subagent/novel_context tích luỹ cả trăm lần là tiến triển bình thường,
+		// không phải vòng lặp; lặp chết thật là tập trung cao độ ở cận điểm.
 		aggregateRepeats(f.agent, tailEvents(evs, repeatWindow), repeats, dups)
-		// 骨架尾巴优先取 coordinator——派发循环在这看得最清。
+		// Phần đuôi khung ưu tiên lấy coordinator — vòng lặp điều phối nhìn rõ nhất ở đây.
 		if f.agent == "coordinator" && len(evs) > 0 {
 			rc.Tail = tailEvents(evs, sessionTail)
 		}
 		rc.Sources = append(rc.Sources, "sessions/"+f.path)
 	}
 	if len(rc.Tail) == 0 {
-		// 无 coordinator 会话时退回最近一个子代理。
+		// Không có session coordinator thì lùi về một subagent gần nhất.
 		for _, f := range files {
 			if evs := scanSessionTailOnly(filepath.Join(sessDir, f.path), f.agent); len(evs) > 0 {
 				rc.Tail = tailEvents(evs, sessionTail)
@@ -143,11 +144,11 @@ func captureSessions(dir string, rc *RuntimeCapture) {
 }
 
 type sessionFile struct {
-	path  string // 相对 sessDir
+	path  string // tương đối sessDir
 	agent string
 }
 
-// sessionFiles 返回 coordinator.jsonl + 最近活跃的子代理会话。
+// sessionFiles trả về coordinator.jsonl + các session subagent hoạt động gần nhất.
 func sessionFiles(sessDir string) []sessionFile {
 	var out []sessionFile
 	if _, err := os.Stat(filepath.Join(sessDir, "coordinator.jsonl")); err == nil {
@@ -183,8 +184,8 @@ func sessionFiles(sessDir string) []sessionFile {
 	return out
 }
 
-// scanSession 读一个会话文件，逐行脱敏，收集事件序列与 per-agent 模型。
-// 重复/同段聚合不在这里做——交给 aggregateRepeats 在近端窗口上算。
+// scanSession đọc một file session, khử nhạy cảm từng dòng, thu chuỗi sự kiện và model per-agent.
+// Tổng hợp trùng lặp/cùng đoạn không làm ở đây — giao cho aggregateRepeats tính trên cửa sổ cận điểm.
 func scanSession(path, agent string, rc *RuntimeCapture, models map[string]RoleModel) []SkelEvent {
 	f, err := os.Open(path)
 	if err != nil {
@@ -210,7 +211,7 @@ func scanSession(path, agent string, rc *RuntimeCapture, models map[string]RoleM
 	return evs
 }
 
-// aggregateRepeats 在给定事件窗口上累计重复签名与同段文本。
+// aggregateRepeats tích luỹ vân tay trùng lặp và văn bản cùng đoạn trên cửa sổ sự kiện cho trước.
 func aggregateRepeats(agent string, evs []SkelEvent, repeats, dups map[string]int) {
 	for _, ev := range evs {
 		for _, t := range ev.Tools {
@@ -229,7 +230,7 @@ func aggregateRepeats(agent string, evs []SkelEvent, repeats, dups map[string]in
 	}
 }
 
-// scanSessionTailOnly 仅取骨架（不计聚合），用于 coordinator 缺失时的兜底尾巴。
+// scanSessionTailOnly chỉ lấy khung (không tính tổng hợp), dùng cho phần đuôi dự phòng khi thiếu coordinator.
 func scanSessionTailOnly(path, agent string) []SkelEvent {
 	f, err := os.Open(path)
 	if err != nil {
@@ -256,8 +257,8 @@ func tailEvents(evs []SkelEvent, n int) []SkelEvent {
 	return evs[len(evs)-n:]
 }
 
-// captureLog 读日志尾部，只聚合结构信号（kind/error/warn/stop_guard），
-// 不把原始日志行入包——Detail 可能夹带正文。
+// captureLog đọc phần đuôi log, chỉ tổng hợp tín hiệu cấu trúc (kind/error/warn/stop_guard),
+// không đưa dòng log gốc vào gói — Detail có thể lẫn chính văn.
 func captureLog(dir string, rc *RuntimeCapture) {
 	path := filepath.Join(dir, "logs", "tui.log")
 	tail, ok := readTail(path)
@@ -268,7 +269,7 @@ func captureLog(dir string, rc *RuntimeCapture) {
 	if !ok {
 		return
 	}
-	rc.Sources = append(rc.Sources, "logs/"+filepath.Base(path)+" (尾部)")
+	rc.Sources = append(rc.Sources, "logs/"+filepath.Base(path)+contentlang.Pick(" (尾部)", " (phần đuôi)"))
 
 	sc := bufio.NewScanner(bytes.NewReader(tail))
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
@@ -289,7 +290,7 @@ func captureLog(dir string, rc *RuntimeCapture) {
 	}
 }
 
-// readTail 读文件尾部 logTailCap 字节，并丢弃首个可能被截断的半行。
+// readTail đọc logTailCap byte cuối file, và bỏ nửa dòng đầu có thể bị cắt cụt.
 func readTail(path string) ([]byte, bool) {
 	f, err := os.Open(path)
 	if err != nil {

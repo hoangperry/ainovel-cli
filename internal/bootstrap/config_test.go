@@ -4,10 +4,10 @@ import "testing"
 
 func TestConfigResolveThinking(t *testing.T) {
 	cfg := Config{
-		Thinking: "low", // 顶层默认
+		Thinking: "low", // mặc định tầng đỉnh
 		Roles: map[string]RoleConfig{
-			"writer":    {Provider: "p", Model: "m", Thinking: "high"}, // 角色覆盖
-			"architect": {Provider: "p", Model: "m"},                   // 无 thinking，应回落默认
+			"writer":    {Provider: "p", Model: "m", Thinking: "high"}, // override theo role
+			"architect": {Provider: "p", Model: "m"},                   // không có thinking, phải rơi về mặc định
 		},
 	}
 
@@ -15,12 +15,12 @@ func TestConfigResolveThinking(t *testing.T) {
 		role string
 		want string
 	}{
-		{"writer", "high"},     // 角色覆盖优先
-		{"architect", "low"},   // 角色未配 → 回落顶层默认
-		{"editor", "low"},      // 角色不存在 → 顶层默认
-		{"", "low"},            // 空 → 顶层默认
-		{"default", "low"},     // default → 顶层默认
-		{"coordinator", "low"}, // 未配 → 顶层默认
+		{"writer", "high"},     // override theo role được ưu tiên
+		{"architect", "low"},   // role chưa cấu hình → rơi về mặc định tầng đỉnh
+		{"editor", "low"},      // role không tồn tại → mặc định tầng đỉnh
+		{"", "low"},            // rỗng → mặc định tầng đỉnh
+		{"default", "low"},     // default → mặc định tầng đỉnh
+		{"coordinator", "low"}, // chưa cấu hình → mặc định tầng đỉnh
 	}
 	for _, c := range cases {
 		if got := cfg.ResolveThinking(c.role); got != c.want {
@@ -28,7 +28,7 @@ func TestConfigResolveThinking(t *testing.T) {
 		}
 	}
 
-	// 顶层默认也为空时，未覆盖角色返回 ""（不覆盖）。
+	// Khi mặc định tầng đỉnh cũng rỗng, role không bị override trả về "" (không override).
 	empty := Config{Roles: map[string]RoleConfig{"writer": {Thinking: "xhigh"}}}
 	if got := empty.ResolveThinking("editor"); got != "" {
 		t.Errorf("空默认下 editor 应返回 \"\"，得 %q", got)

@@ -3,24 +3,28 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/voocel/agentcore/schema"
+
+	"github.com/voocel/ainovel-cli/internal/contentlang"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 )
 
-// AskUserResponse 用户回答结果。
+// AskUserResponse kết quả trả lời của người dùng.
 type AskUserResponse struct {
-	Answers map[string]string // question text → 用户选择的答案
-	Notes   map[string]string // question text → 自定义输入（选"其他"时）
+	Answers map[string]string // question text → đáp án người dùng chọn
+	Notes   map[string]string // question text → nội dung nhập tùy chỉnh (khi chọn "khác")
 }
 
-// AskUserHandler 阻塞等待用户回答，由 CLI 或 TUI 注入具体实现。
+// AskUserHandler chặn chờ người dùng trả lời, do CLI hoặc TUI tiêm cài đặt cụ thể.
 type AskUserHandler func(ctx context.Context, questions []Question) (*AskUserResponse, error)
 
-// Question 单个问题。
+// Question một câu hỏi đơn lẻ.
 type Question struct {
 	Question    string   `json:"question"`
 	Header      string   `json:"header"`
@@ -28,13 +32,13 @@ type Question struct {
 	MultiSelect bool     `json:"multiSelect"`
 }
 
-// Option 可选项。
+// Option một lựa chọn.
 type Option struct {
 	Label       string `json:"label"`
 	Description string `json:"description"`
 }
 
-// AskUserTool 让 LLM 向用户提出结构化问题。
+// AskUserTool cho phép LLM đặt câu hỏi có cấu trúc cho người dùng.
 type AskUserTool struct {
 	mu      sync.RWMutex
 	handler AskUserHandler
@@ -44,7 +48,7 @@ func NewAskUserTool() *AskUserTool {
 	return &AskUserTool{}
 }
 
-// SetHandler 注入 UI 回调，CLI 和 TUI 各自实现。
+// SetHandler tiêm callback UI, CLI và TUI tự cài đặt riêng.
 func (t *AskUserTool) SetHandler(h AskUserHandler) {
 	t.mu.Lock()
 	t.handler = h
@@ -52,28 +56,31 @@ func (t *AskUserTool) SetHandler(h AskUserHandler) {
 }
 
 func (t *AskUserTool) Name() string  { return "ask_user" }
-func (t *AskUserTool) Label() string { return "询问用户" }
+func (t *AskUserTool) Label() string { return i18n.T("ui.tool.ask_user.label") }
 
-// 交互工具：阻塞等待用户回答，显然不能并发调度。
+// Tool tương tác: chặn chờ người dùng trả lời, hiển nhiên không thể điều phối song song.
 func (t *AskUserTool) ReadOnly(_ json.RawMessage) bool        { return false }
 func (t *AskUserTool) ConcurrencySafe(_ json.RawMessage) bool { return false }
 func (t *AskUserTool) Description() string {
-	return "当需求信息不足、且缺失信息会明显影响规划方向时，向用户提出 1-4 个结构化问题。每个问题必须包含 header、question 和 2-4 个选项；用户可选预设项，也可自由补充。返回结果是可直接阅读的中文摘要，格式类似：用户回答：[篇幅] 长篇；[重心] 剧情升级（补充：不要后宫）。只有在无法稳定判断篇幅、主线重心、关键约束或明确偏好时才使用；不要把能自行合理推断的问题都抛给用户。"
+	return contentlang.Pick(
+		"当需求信息不足、且缺失信息会明显影响规划方向时，向用户提出 1-4 个结构化问题。每个问题必须包含 header、question 和 2-4 个选项；用户可选预设项，也可自由补充。返回结果是可直接阅读的中文摘要，格式类似：用户回答：[篇幅] 长篇；[重心] 剧情升级（补充：不要后宫）。只有在无法稳定判断篇幅、主线重心、关键约束或明确偏好时才使用；不要把能自行合理推断的问题都抛给用户。",
+		"Khi thông tin nhu cầu chưa đủ và phần thiếu sẽ ảnh hưởng rõ rệt đến hướng lập dàn ý, hãy đặt cho người dùng 1-4 câu hỏi có cấu trúc. Mỗi câu hỏi phải gồm header、question và 2-4 lựa chọn; người dùng có thể chọn mục có sẵn hoặc tự bổ sung. Kết quả trả về là bản tóm tắt đọc trực tiếp được, định dạng kiểu: 用户回答：[篇幅] dài;[重心] nâng cấp cốt truyện（bổ sung：không hậu cung）. Chỉ dùng khi không thể phán đoán ổn định độ dài, trọng tâm tuyến chính, ràng buộc then chốt hoặc sở thích rõ ràng; đừng ném cho người dùng những câu có thể tự suy luận hợp lý.",
+	)
 }
 
 func (t *AskUserTool) Schema() map[string]any {
 	option := schema.Object(
-		schema.Property("label", schema.String("选项显示文本（1-5个词）")).Required(),
-		schema.Property("description", schema.String("选项含义说明")).Required(),
+		schema.Property("label", schema.String(contentlang.Pick("选项显示文本（1-5个词）", "Văn bản hiển thị lựa chọn (1-5 từ)"))).Required(),
+		schema.Property("description", schema.String(contentlang.Pick("选项含义说明", "Giải thích ý nghĩa lựa chọn"))).Required(),
 	)
 	question := schema.Object(
-		schema.Property("question", schema.String("完整的问题文本")).Required(),
-		schema.Property("header", schema.String("短标签（最多12字符）")).Required(),
-		schema.Property("options", schema.Array("2-4个可选项", option)).Required(),
-		schema.Property("multiSelect", schema.Bool("是否允许多选")),
+		schema.Property("question", schema.String(contentlang.Pick("完整的问题文本", "Văn bản câu hỏi đầy đủ"))).Required(),
+		schema.Property("header", schema.String(contentlang.Pick("短标签（最多12字符）", "Nhãn ngắn (tối đa 12 ký tự)"))).Required(),
+		schema.Property("options", schema.Array(contentlang.Pick("2-4个可选项", "2-4 lựa chọn"), option)).Required(),
+		schema.Property("multiSelect", schema.Bool(contentlang.Pick("是否允许多选", "Có cho phép chọn nhiều hay không"))),
 	)
 	return schema.Object(
-		schema.Property("questions", schema.Array("1-4个问题", question)).Required(),
+		schema.Property("questions", schema.Array(contentlang.Pick("1-4个问题", "1-4 câu hỏi"), question)).Required(),
 	)
 }
 
@@ -87,7 +94,10 @@ func (t *AskUserTool) Execute(ctx context.Context, args json.RawMessage) (json.R
 		return nil, fmt.Errorf("invalid args: %w", err)
 	}
 	if err := validateQuestions(a.Questions); err != nil {
-		return json.Marshal(fmt.Sprintf("参数校验失败: %s", err))
+		return json.Marshal(contentlang.Pick(
+			fmt.Sprintf("参数校验失败: %s", err),
+			fmt.Sprintf("Kiểm tra tham số thất bại: %s", err),
+		))
 	}
 
 	t.mu.RLock()
@@ -95,12 +105,18 @@ func (t *AskUserTool) Execute(ctx context.Context, args json.RawMessage) (json.R
 	t.mu.RUnlock()
 
 	if h == nil {
-		return json.Marshal("当前环境不支持交互式询问，请根据你的判断自行决策并继续。")
+		return json.Marshal(contentlang.Pick(
+			"当前环境不支持交互式询问，请根据你的判断自行决策并继续。",
+			"Môi trường hiện tại không hỗ trợ hỏi tương tác, hãy tự quyết định theo phán đoán của bạn và tiếp tục.",
+		))
 	}
 
 	resp, err := h(ctx, a.Questions)
 	if err != nil {
-		return json.Marshal(fmt.Sprintf("用户交互失败: %s。请根据你的判断自行决策并继续。", err))
+		return json.Marshal(contentlang.Pick(
+			fmt.Sprintf("用户交互失败: %s。请根据你的判断自行决策并继续。", err),
+			fmt.Sprintf("Tương tác người dùng thất bại: %s. Hãy tự quyết định theo phán đoán của bạn và tiếp tục.", err),
+		))
 	}
 
 	return json.Marshal(formatAnswers(a.Questions, resp))
@@ -108,30 +124,30 @@ func (t *AskUserTool) Execute(ctx context.Context, args json.RawMessage) (json.R
 
 func validateQuestions(questions []Question) error {
 	if len(questions) == 0 {
-		return fmt.Errorf("至少需要一个问题")
+		return errors.New(i18n.T("error.tool.ask.need_question"))
 	}
 	if len(questions) > 4 {
-		return fmt.Errorf("最多4个问题，当前 %d 个", len(questions))
+		return fmt.Errorf(i18n.T("error.tool.ask.too_many"), len(questions))
 	}
 	for i, q := range questions {
 		if q.Question == "" {
-			return fmt.Errorf("问题 %d: 问题文本不能为空", i+1)
+			return fmt.Errorf(i18n.T("error.tool.ask.q_text_empty"), i+1)
 		}
 		if q.Header == "" {
-			return fmt.Errorf("问题 %d: header 不能为空", i+1)
+			return fmt.Errorf(i18n.T("error.tool.ask.q_header_empty"), i+1)
 		}
 		if utf8.RuneCountInString(q.Header) > 12 {
-			return fmt.Errorf("问题 %d: header %q 超过12字符", i+1, q.Header)
+			return fmt.Errorf(i18n.T("error.tool.ask.q_header_long"), i+1, q.Header)
 		}
 		if len(q.Options) < 2 || len(q.Options) > 4 {
-			return fmt.Errorf("问题 %d: 需要2-4个选项，当前 %d 个", i+1, len(q.Options))
+			return fmt.Errorf(i18n.T("error.tool.ask.q_opt_count"), i+1, len(q.Options))
 		}
 		for j, opt := range q.Options {
 			if opt.Label == "" {
-				return fmt.Errorf("问题 %d 选项 %d: label 不能为空", i+1, j+1)
+				return fmt.Errorf(i18n.T("error.tool.ask.opt_label_empty"), i+1, j+1)
 			}
 			if opt.Description == "" {
-				return fmt.Errorf("问题 %d 选项 %d: description 不能为空", i+1, j+1)
+				return fmt.Errorf(i18n.T("error.tool.ask.opt_desc_empty"), i+1, j+1)
 			}
 		}
 	}
@@ -140,7 +156,10 @@ func validateQuestions(questions []Question) error {
 
 func formatAnswers(questions []Question, resp *AskUserResponse) string {
 	if resp == nil || len(resp.Answers) == 0 {
-		return "用户未提供回答，请根据你的判断自行决策并继续。"
+		return contentlang.Pick(
+			"用户未提供回答，请根据你的判断自行决策并继续。",
+			"Người dùng chưa trả lời, hãy tự quyết định theo phán đoán của bạn và tiếp tục.",
+		)
 	}
 	var parts []string
 	for _, q := range questions {
@@ -150,9 +169,13 @@ func formatAnswers(questions []Question, resp *AskUserResponse) string {
 		}
 		entry := fmt.Sprintf("[%s] %s", q.Header, answer)
 		if note, hasNote := resp.Notes[q.Question]; hasNote {
-			entry += "（补充：" + note + "）"
+			entry += contentlang.Pick("（补充："+note+"）", "（bổ sung："+note+"）")
 		}
 		parts = append(parts, entry)
 	}
-	return fmt.Sprintf("用户回答：%s", strings.Join(parts, "；"))
+	joined := strings.Join(parts, contentlang.Pick("；", ";"))
+	return contentlang.Pick(
+		fmt.Sprintf("用户回答：%s", joined),
+		fmt.Sprintf("Người dùng trả lời: %s", joined),
+	)
 }

@@ -90,7 +90,7 @@ func TestDirectivesAddCapacityLimit(t *testing.T) {
 		t.Error("expected error when exceeding capacity")
 	}
 
-	// 删一条后应能再加
+	// sau khi xóa một mục thì phải thêm lại được
 	if _, err := store.Directives.Remove(1); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}

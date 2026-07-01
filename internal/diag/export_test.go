@@ -8,13 +8,14 @@ import (
 	"testing"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// sentinel 是一段绝不该出现在导出里的"小说正文"。
+// sentinel là một đoạn "chính văn tiểu thuyết" tuyệt đối không được xuất hiện trong bản export.
 const sentinel = "雪夜里主角揭穿了反派的惊天阴谋这是机密正文"
 
-// writeSession 把若干消息按 sessions/*.jsonl 的格式写到临时 output 目录。
+// writeSession ghi một số message theo định dạng sessions/*.jsonl vào thư mục output tạm.
 func writeSession(t *testing.T, rel string, msgs []agentcore.Message) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -53,16 +54,20 @@ func errResult(msg string) agentcore.Message {
 	}
 }
 
-// TestExport_DeathLoopShape 端到端复现 #34：模型把 commit_chapter 的 chapter
-// 字符串化导致校验循环。断言导出能定位、且小说正文零出包。
+// TestExport_DeathLoopShape tái hiện end-to-end #34: model chuỗi-hoá tham số chapter của commit_chapter
+// gây vòng lặp kiểm tra. Khẳng định bản export định vị được, và chính văn tiểu thuyết không ra gói.
 func TestExport_DeathLoopShape(t *testing.T) {
+	// Khẳng định ở dưới so khớp tiêu đề Finding zh nguyên gốc nên đặt nội dung về "zh".
+	contentlang.Set("zh")
+	defer contentlang.Set("vi")
+
 	var msgs []agentcore.Message
-	// 一段裸的 coordinator 规划正文（<4KB，绕过 session_compact），必须被打码。
+	// Một đoạn chính văn kế hoạch coordinator trần (<4KB, né session_compact), bắt buộc bị che.
 	msgs = append(msgs, agentcore.Message{
 		Role:    agentcore.RoleAssistant,
 		Content: []agentcore.ContentBlock{agentcore.TextBlock(sentinel)},
 	})
-	// 14 轮 commit_chapter(chapter:"7") + InputValidationError。
+	// 14 vòng commit_chapter(chapter:"7") + InputValidationError.
 	for range 14 {
 		msgs = append(msgs, commitCall(`"7"`))
 		msgs = append(msgs, errResult("InputValidationError: chapter must be int"))
@@ -85,7 +90,7 @@ func TestExport_DeathLoopShape(t *testing.T) {
 	if !strings.Contains(out, "×14") {
 		t.Errorf("重复聚合未列出 ×14\n%s", out)
 	}
-	// Phase 2：运行时检测应把这个循环判成 critical 的 RepeatedToolError。
+	// Phase 2: phát hiện trạng thái chạy phải phán vòng lặp này thành RepeatedToolError mức critical.
 	if !strings.Contains(out, "工具反复报同一错误") {
 		t.Errorf("运行时检测未产出 RepeatedToolError\n%s", out)
 	}
@@ -94,8 +99,8 @@ func TestExport_DeathLoopShape(t *testing.T) {
 	}
 }
 
-// TestExport_NumberVsStringArg 证明标量与字符串投影能区分类型：
-// chapter:7（数字）保留为 7，chapter:"7"（字符串）保留为 "7"。
+// TestExport_NumberVsStringArg chứng minh phép chiếu scalar và chuỗi phân biệt được kiểu:
+// chapter:7 (số) giữ thành 7, chapter:"7" (chuỗi) giữ thành "7".
 func TestExport_NumberVsStringArg(t *testing.T) {
 	intDir := writeSession(t, "coordinator.jsonl", []agentcore.Message{commitCall(`7`)})
 	si := store.NewStore(intDir)
@@ -106,22 +111,22 @@ func TestExport_NumberVsStringArg(t *testing.T) {
 	}
 }
 
-// TestProjectValue_ProseArgRedacted 守护脱敏边界：标识符型短值保留、
-// 中文/带空格的短值（如 dispatch task、chapter title）一律打码。
+// TestProjectValue_ProseArgRedacted canh giữ biên khử nhạy cảm: giá trị ngắn kiểu định danh được giữ,
+// giá trị ngắn tiếng Trung/có khoảng trắng (như dispatch task, chapter title) đều bị che.
 func TestProjectValue_ProseArgRedacted(t *testing.T) {
 	keep := map[string]string{
-		`"7"`:       `"7"`,       // 字符串化数字（#34 信号）
-		`"premise"`: `"premise"`, // 枚举
-		`"writer"`:  `"writer"`,  // 角色名
-		`7`:         `7`,         // 数字标量
-		`true`:      `true`,      // bool 标量
+		`"7"`:       `"7"`,       // Số bị chuỗi-hoá (tín hiệu #34)
+		`"premise"`: `"premise"`, // enum
+		`"writer"`:  `"writer"`,  // Tên role
+		`7`:         `7`,         // Scalar số
+		`true`:      `true`,      // Scalar bool
 	}
 	for in, want := range keep {
 		if got := projectValue([]byte(in)); got != want {
 			t.Errorf("应保留 %s：got %q want %q", in, got, want)
 		}
 	}
-	// 含中文 / 空格 → 必须打码，且不含原文。
+	// Chứa tiếng Trung / khoảng trắng → bắt buộc bị che, và không chứa nguyên văn.
 	prose := []string{`"第7章 雪夜的真相"`, `"雪夜杀机"`, `"主角揭穿阴谋"`}
 	for _, in := range prose {
 		got := projectValue([]byte(in))
@@ -134,7 +139,7 @@ func TestProjectValue_ProseArgRedacted(t *testing.T) {
 	}
 }
 
-// TestWriteExport_WritesFile 证明纯函数路径：不依赖 TUI，写出固定相对路径。
+// TestWriteExport_WritesFile chứng minh đường thuần hàm: không phụ thuộc TUI, ghi ra đường dẫn tương đối cố định.
 func TestWriteExport_WritesFile(t *testing.T) {
 	dir := writeSession(t, "coordinator.jsonl", []agentcore.Message{commitCall(`"7"`), errResult("boom")})
 	s := store.NewStore(dir)
@@ -159,7 +164,7 @@ func TestWriteExport_WritesFile(t *testing.T) {
 	}
 }
 
-// TestRedactMessage_DupSha 证明同一段文本反复出现产生同 sha（循环信号）。
+// TestRedactMessage_DupSha chứng minh cùng một đoạn văn bản xuất hiện lặp lại sinh ra cùng sha (tín hiệu vòng lặp).
 func TestRedactMessage_DupSha(t *testing.T) {
 	a := redactMessage("coordinator", agentcore.Message{
 		Role:    agentcore.RoleAssistant,

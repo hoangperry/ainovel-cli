@@ -12,28 +12,28 @@ import (
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// SkelEvent 是一条会话消息脱敏后的行为骨架：保留结构信号（角色 / 工具 / 错误 /
-// 重复指纹），所有自由文本（正文、prompt、思考）一律打码。这是比
-// store.compactMessage 更严的一层投影——后者按体积压（>4KB），这里不看体积，
-// 任何文本都不出包。
+// SkelEvent là khung hành vi của một message session sau khi khử nhạy cảm: giữ tín hiệu cấu trúc (role / tool / lỗi /
+// vân tay trùng lặp), mọi văn bản tự do (chính văn, prompt, tư duy) đều bị che. Đây là một lớp chiếu chặt hơn
+// store.compactMessage — cái sau nén theo dung lượng (>4KB), ở đây không nhìn dung lượng,
+// bất kỳ văn bản nào cũng không ra gói.
 type SkelEvent struct {
-	Agent    string     // 来源会话：coordinator / writer-ch07 …
+	Agent    string     // Session nguồn: coordinator / writer-ch07 …
 	Role     string     // assistant / tool / user
-	Tools    []SkelTool // 该消息内的工具调用
-	ErrClass string     // role=tool 且 is_error：错误首行（框架错误串，不含正文）
-	TextSha  string     // 打码正文的短哈希；同 sha = 反复生成同一段（循环信号）
-	Redacted int        // 本条打码的文本/思考块数（用于脱敏自检）
+	Tools    []SkelTool // Các lời gọi tool trong message này
+	ErrClass string     // role=tool và is_error: dòng đầu của lỗi (chuỗi lỗi framework, không chứa chính văn)
+	TextSha  string     // Hash ngắn của chính văn đã che; cùng sha = sinh lặp cùng một đoạn (tín hiệu vòng lặp)
+	Redacted int        // Số khối văn bản/tư duy bị che trong dòng này (dùng cho tự kiểm khử nhạy cảm)
 }
 
-// SkelTool 是一次工具调用的脱敏投影。
+// SkelTool là phép chiếu khử nhạy cảm của một lời gọi tool.
 type SkelTool struct {
-	Name     string            // 工具名（结构信号，不含正文）
-	Args     map[string]string // key → 标量原值 / 短字符串带引号 / "<redacted len sha>"
-	Invalid  bool              // ArgsInvalid：模型发来的参数无法解析（#34 信号）
-	ParseErr string            // ArgsParseError：解析失败原因
+	Name     string            // Tên tool (tín hiệu cấu trúc, không chứa chính văn)
+	Args     map[string]string // key → giá trị scalar gốc / chuỗi ngắn có ngoặc kép / "<redacted len sha>"
+	Invalid  bool              // ArgsInvalid: tham số model gửi tới không phân giải được (tín hiệu #34)
+	ParseErr string            // ArgsParseError: lý do phân giải thất bại
 }
 
-// redactMessage 把一条 agentcore.Message 投影成行为骨架。
+// redactMessage chiếu một agentcore.Message thành khung hành vi.
 func redactMessage(agent string, m agentcore.Message) SkelEvent {
 	ev := SkelEvent{Agent: agent, Role: string(m.Role)}
 	isErr, _ := m.Metadata["is_error"].(bool)
@@ -42,8 +42,8 @@ func redactMessage(agent string, m agentcore.Message) SkelEvent {
 	for _, b := range m.Content {
 		switch b.Type {
 		case agentcore.ContentText:
-			// tool 错误结果保留首行：这是我们自己的错误串（如 InputValidationError），
-			// 不含正文，且是定位循环的关键。其余文本一律进打码池。
+			// Kết quả lỗi của tool giữ dòng đầu: đây là chuỗi lỗi của chính ta (như InputValidationError),
+			// không chứa chính văn, và là mấu chốt để định vị vòng lặp. Văn bản còn lại đều vào bể che.
 			if m.Role == agentcore.RoleTool && isErr && ev.ErrClass == "" {
 				ev.ErrClass = firstLine(b.Text, 160)
 				continue
@@ -69,7 +69,7 @@ func redactMessage(agent string, m agentcore.Message) SkelEvent {
 	return ev
 }
 
-// redactToolCall 投影一次工具调用：工具名 + 参数（值脱敏）+ 解析异常标记。
+// redactToolCall chiếu một lời gọi tool: tên tool + tham số (giá trị đã khử nhạy cảm) + cờ lỗi phân giải.
 func redactToolCall(tc *agentcore.ToolCall) SkelTool {
 	return SkelTool{
 		Name:     tc.Name,
@@ -79,8 +79,8 @@ func redactToolCall(tc *agentcore.ToolCall) SkelTool {
 	}
 }
 
-// redactArgs 把工具参数对象投影成 key → 脱敏值。非对象参数返回 nil
-// （ArgsInvalid/ParseErr 已在 SkelTool 另行记录）。
+// redactArgs chiếu object tham số tool thành key → giá trị đã khử nhạy cảm. Tham số không phải object trả về nil
+// (ArgsInvalid/ParseErr đã được ghi riêng trong SkelTool).
 func redactArgs(raw json.RawMessage) map[string]string {
 	if len(raw) == 0 {
 		return nil
@@ -96,11 +96,11 @@ func redactArgs(raw json.RawMessage) map[string]string {
 	return out
 }
 
-// projectValue 按 JSON 类型投影单个参数值：
-//   - 标量（数字 / bool / null）：原值即结构信号，保留（chapter: 7）
-//   - 短的标识符型字符串：带引号保留，暴露类型（chapter: "7" ← #34 的字符串化数字信号）
-//   - 含中文 / 空格 / 长文本的字符串、对象、数组：打码为 <redacted …>（正文零出包）
-//   - 已是 [session_compact: …] 占位：安全且有信息，原样保留
+// projectValue chiếu một giá trị tham số theo kiểu JSON:
+//   - scalar (số / bool / null): giá trị gốc chính là tín hiệu cấu trúc, giữ lại (chapter: 7)
+//   - chuỗi kiểu định danh ngắn: giữ kèm ngoặc kép, lộ kiểu (chapter: "7" ← tín hiệu số bị chuỗi-hoá của #34)
+//   - chuỗi chứa tiếng Trung / khoảng trắng / văn bản dài, object, array: che thành <redacted …> (chính văn không ra gói)
+//   - đã là placeholder [session_compact: …]: an toàn và có thông tin, giữ nguyên
 func projectValue(raw json.RawMessage) string {
 	s := strings.TrimSpace(string(raw))
 	if s == "" {
@@ -115,8 +115,8 @@ func projectValue(raw json.RawMessage) string {
 		if strings.HasPrefix(str, store.CompactTag) {
 			return str
 		}
-		// 只保留"像标识符/数字/枚举"的短值（chapter:"7"、type:"premise"、agent:"writer"）；
-		// 任何含中文、空格或其他符号的字符串都视为正文，一律打码。
+		// Chỉ giữ giá trị ngắn "giống định danh/số/enum" (chapter:"7", type:"premise", agent:"writer");
+		// bất kỳ chuỗi nào chứa tiếng Trung, khoảng trắng hoặc ký hiệu khác đều xem là chính văn, đều bị che.
 		if utf8.RuneCountInString(str) <= 32 && isStructuralToken(str) {
 			return strconv.Quote(str)
 		}
@@ -130,8 +130,8 @@ func projectValue(raw json.RawMessage) string {
 	}
 }
 
-// isStructuralToken 判断字符串是否"像标识符"——纯 ASCII 的字母 / 数字 / `_-.:/`，
-// 无空格、无中文。用来区分结构信号（保留）与正文片段（打码）。
+// isStructuralToken phán định chuỗi có "giống định danh" hay không — chỉ chữ cái / số ASCII / `_-.:/`,
+// không khoảng trắng, không tiếng Trung. Dùng để phân biệt tín hiệu cấu trúc (giữ) với mảnh chính văn (che).
 func isStructuralToken(s string) bool {
 	if s == "" {
 		return false
@@ -151,14 +151,14 @@ func redactPlaceholder(s string) string {
 	return fmt.Sprintf("<redacted len=%d sha=%s>", utf8.RuneCountInString(s), shortHash(s))
 }
 
-// shortHash 取文本的短哈希；只用于"是否同一段文本反复出现"的判断，非加密用途。
+// shortHash lấy hash ngắn của văn bản; chỉ dùng để phán định "cùng một đoạn văn bản có xuất hiện lặp lại hay không", không dùng cho mục đích mã hoá.
 func shortHash(s string) string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(s))
 	return fmt.Sprintf("%08x", h.Sum32())
 }
 
-// firstLine 取首行并按 rune 截断，供错误串摘要。
+// firstLine lấy dòng đầu và cắt cụt theo rune, dùng cho tóm tắt chuỗi lỗi.
 func firstLine(s string, max int) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexAny(s, "\n\r"); i >= 0 {

@@ -4,9 +4,9 @@ import (
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 )
 
-// LoadState 从 Store 读取 Route 所需的全部事实。
-// 这是路由的"IO 边界"：所有读取集中在这里，Route 保持纯。
-// 读取失败按保守默认填充（has*=false, boundary=nil），让 Router 倾向重派而非跳过。
+// LoadState đọc toàn bộ sự kiện mà Route cần từ Store.
+// Đây là "biên IO" của routing: mọi thao tác đọc tập trung ở đây, Route giữ thuần.
+// Đọc thất bại thì điền theo mặc định bảo thủ (has*=false, boundary=nil), để Router thiên về phái lại thay vì bỏ qua.
 func LoadState(store *storepkg.Store) State {
 	s := State{
 		FoundationMissing: store.FoundationMissing(),
@@ -21,7 +21,7 @@ func LoadState(store *storepkg.Store) State {
 		s.LastCompleted = progress.CompletedChapters[n-1]
 	}
 
-	// 弧边界仅在分层模式且有已完成章节时才计算
+	// Biên cung truyện chỉ tính khi ở chế độ phân tầng và đã có chương hoàn thành
 	if progress.Layered && s.LastCompleted > 0 {
 		if boundary, berr := store.Outline.CheckArcBoundary(s.LastCompleted); berr == nil && boundary != nil {
 			s.ArcBoundary = boundary

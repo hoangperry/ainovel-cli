@@ -8,13 +8,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/voocel/agentcore/schema"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/errs"
+	"github.com/voocel/ainovel-cli/internal/i18n"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// DraftChapterTool 写入整章草稿，替代旧的 write_scene + polish_chapter 流水线。
-// Agent 自主决定一次写完还是分批续写。
+// DraftChapterTool ghi bản nháp cả chương, thay thế pipeline cũ write_scene + polish_chapter.
+// Agent tự quyết định viết xong một lần hay viết tiếp theo từng đợt.
 type DraftChapterTool struct {
 	store *store.Store
 }
@@ -25,30 +27,33 @@ func NewDraftChapterTool(store *store.Store) *DraftChapterTool {
 
 func (t *DraftChapterTool) Name() string { return "draft_chapter" }
 func (t *DraftChapterTool) Description() string {
-	return "写入章节正文。mode=write 覆盖写入整章，mode=append 追加到现有草稿（续写/修改）"
+	return contentlang.Pick(
+		"写入章节正文。mode=write 覆盖写入整章，mode=append 追加到现有草稿（续写/修改）",
+		"Ghi nội dung chính của chương. mode=write ghi đè toàn chương, mode=append nối thêm vào bản nháp hiện có (viết tiếp/sửa)",
+	)
 }
-func (t *DraftChapterTool) Label() string { return "写入章节" }
+func (t *DraftChapterTool) Label() string { return i18n.T("ui.tool.draft_chapter.label") }
 
-// 写工具，禁止并发（读-改-写竞态）。
+// Tool ghi, cấm song song (tranh chấp đọc-sửa-ghi).
 func (t *DraftChapterTool) ReadOnly(_ json.RawMessage) bool        { return false }
 func (t *DraftChapterTool) ConcurrencySafe(_ json.RawMessage) bool { return false }
 
 func (t *DraftChapterTool) Schema() map[string]any {
-	// mode 标 required 是为了兼容 OpenAI strict tool calling——strict 模式
-	// 要求所有 properties 都在 required 列表中。原来的"省略 mode 走 write
-	// 默认"行为现在需要模型显式传 mode="write"，Execute 的 default 分支不变。
+	// Đánh dấu mode là required để tương thích OpenAI strict tool calling — chế độ strict
+	// yêu cầu mọi properties đều nằm trong danh sách required. Hành vi cũ "bỏ mode thì mặc định
+	// đi write" giờ yêu cầu model truyền tường minh mode="write", nhánh default của Execute không đổi.
 	return schema.Object(
-		schema.Property("chapter", schema.Int("章节号")).Required(),
-		schema.Property("content", schema.String("章节正文")).Required(),
-		schema.Property("mode", schema.Enum("写入模式", "write", "append")).Required(),
+		schema.Property("chapter", schema.Int(contentlang.Pick("章节号", "Số chương"))).Required(),
+		schema.Property("content", schema.String(contentlang.Pick("章节正文", "Nội dung chính của chương"))).Required(),
+		schema.Property("mode", schema.Enum(contentlang.Pick("写入模式", "Chế độ ghi"), "write", "append")).Required(),
 	)
 }
 
-// StrictSchema 启用 OpenAI 的 strict tool calling，让模型必须严格遵守
-// schema：所有 required 字段必填，arguments 不能"提前 EOT"出现空对象。
-// litellm 透传 strict 字段；OpenAI / xAI 等支持的后端会强制执行，其他后端
-// 按 HTTP/JSON 惯例忽略未知字段。Anthropic/Gemini/Bedrock 走各自的转换链路
-// 自然不会看到这个字段。
+// StrictSchema bật strict tool calling của OpenAI, buộc model phải tuân thủ nghiêm ngặt
+// schema: mọi trường required đều bắt buộc, arguments không được "EOT sớm" tạo ra đối tượng rỗng.
+// litellm truyền thẳng trường strict; các backend hỗ trợ như OpenAI / xAI sẽ cưỡng chế thực thi, các backend khác
+// theo thông lệ HTTP/JSON bỏ qua trường không xác định. Anthropic/Gemini/Bedrock đi qua chuỗi chuyển đổi riêng
+// nên tự nhiên không thấy trường này.
 func (t *DraftChapterTool) StrictSchema() bool { return true }
 
 func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
@@ -73,7 +78,7 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 		return nil, err
 	}
 	if t.store.Progress.IsChapterCompleted(a.Chapter) {
-		// 打磨/重写路径：章节虽已完成，但仍在 pending_rewrites 中，允许覆盖草稿
+		// Đường đi mài giũa/viết lại: chương tuy đã hoàn thành nhưng vẫn nằm trong pending_rewrites, cho phép ghi đè bản nháp
 		progress, _ := t.store.Progress.Load()
 		inRewriteQueue := progress != nil && slices.Contains(progress.PendingRewrites, a.Chapter)
 		if !inRewriteQueue {
@@ -81,7 +86,10 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 				"chapter":   a.Chapter,
 				"skipped":   true,
 				"completed": true,
-				"reason":    fmt.Sprintf("第 %d 章已提交完成，不能覆盖", a.Chapter),
+				"reason": contentlang.Pick(
+					fmt.Sprintf("第 %d 章已提交完成，不能覆盖", a.Chapter),
+					fmt.Sprintf("Chương %d đã commit hoàn tất, không thể ghi đè", a.Chapter),
+				),
 			})
 		}
 	}
@@ -109,7 +117,10 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 			"chapter":    a.Chapter,
 			"mode":       "append",
 			"word_count": utf8.RuneCountInString(full),
-			"next_step":  "先 read_chapter(source=draft) 回读草稿，再调用 check_consistency，最后 commit_chapter",
+			"next_step": contentlang.Pick(
+				"先 read_chapter(source=draft) 回读草稿，再调用 check_consistency，最后 commit_chapter",
+				"Trước tiên read_chapter(source=draft) để đọc lại bản nháp, rồi gọi check_consistency, cuối cùng commit_chapter",
+			),
 		})
 	default: // write
 		if err := t.store.Drafts.SaveDraft(a.Chapter, a.Content); err != nil {
@@ -126,7 +137,10 @@ func (t *DraftChapterTool) Execute(_ context.Context, args json.RawMessage) (jso
 			"chapter":    a.Chapter,
 			"mode":       "write",
 			"word_count": utf8.RuneCountInString(a.Content),
-			"next_step":  "先 read_chapter(source=draft) 回读草稿，再调用 check_consistency，最后 commit_chapter",
+			"next_step": contentlang.Pick(
+				"先 read_chapter(source=draft) 回读草稿，再调用 check_consistency，最后 commit_chapter",
+				"Trước tiên read_chapter(source=draft) để đọc lại bản nháp, rồi gọi check_consistency, cuối cùng commit_chapter",
+			),
 		})
 	}
 }

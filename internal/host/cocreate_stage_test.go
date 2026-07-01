@@ -5,15 +5,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/host/imp"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// newFlagTestHost 造一个最小 Host，只够驱动 cocreating 标记状态机与并发守卫。
-// emitEvent 用 recover + 非阻塞 select，缓冲 events 通道即可，无需 coordinator/observer。
-// PauseForCoCreate 的运行态分支会调 coordinator.Abort（复用已验证的 Esc 暂停路径），
-// 不在此单测；这里只覆盖不依赖 coordinator 的非运行态与标记/守卫逻辑。
+// newFlagTestHost tạo một Host tối thiểu, chỉ đủ để chạy máy trạng thái cờ cocreating và guard đồng thời.
+// emitEvent dùng recover + select không chặn, chỉ cần buffer kênh events, không cần coordinator/observer.
+// Nhánh trạng thái chạy của PauseForCoCreate sẽ gọi coordinator.Abort (tái dùng đường tạm dừng Esc đã được kiểm chứng),
+// không nằm trong unit test này; ở đây chỉ phủ logic trạng thái không-chạy và cờ/guard không phụ thuộc coordinator.
 func newFlagTestHost(lc lifecycle, cocreating bool) *Host {
 	return &Host{
 		lifecycle:  lc,
@@ -65,7 +66,7 @@ func TestCancelCoCreate_ClearsFlag(t *testing.T) {
 
 func TestCancelCoCreate_NoopWhenNotCocreating(t *testing.T) {
 	h := newFlagTestHost(lifecycleRunning, false)
-	h.CancelCoCreate() // 不应 panic，不应改状态
+	h.CancelCoCreate() // không nên panic, không nên đổi trạng thái
 	if h.cocreating || h.lifecycle != lifecycleRunning {
 		t.Error("非共创态 CancelCoCreate 应为 no-op")
 	}
@@ -94,7 +95,7 @@ func TestGuardExclusive(t *testing.T) {
 		name       string
 		lc         lifecycle
 		cocreating bool
-		wantErr    string // 空=期望放行
+		wantErr    string // rỗng = kỳ vọng cho qua
 	}{
 		{"running", lifecycleRunning, false, "运行中"},
 		{"cocreating", lifecyclePaused, true, "阶段共创"},
@@ -121,8 +122,8 @@ func TestGuardExclusive(t *testing.T) {
 	}
 }
 
-// TestStageCoCreate_OccupancyBlocksConcurrentEntries 验证共创窗口内独占性入口全部被堵：
-// import/start/resume/continue 在 cocreating 期间都应被拒，补上 paused 期只查 ==running 的缺口。
+// TestStageCoCreate_OccupancyBlocksConcurrentEntries kiểm chứng mọi lối vào độc quyền trong cửa sổ đồng sáng tạo đều bị chặn:
+// import/start/resume/continue trong thời gian cocreating đều phải bị từ chối, lấp lỗ hổng giai đoạn paused chỉ kiểm ==running.
 func TestStageCoCreate_OccupancyBlocksConcurrentEntries(t *testing.T) {
 	h := newFlagTestHost(lifecycleIdle, false)
 	if !h.PauseForCoCreate() {
@@ -142,7 +143,7 @@ func TestStageCoCreate_OccupancyBlocksConcurrentEntries(t *testing.T) {
 		t.Error("共创窗口内 Continue 应被拒")
 	}
 
-	// 退出共创后占用解除（这里走 Cancel；Resume 注入路径需 coordinator，归集成验证）
+	// Sau khi thoát đồng sáng tạo thì giải phóng chiếm dụng (ở đây đi qua Cancel; đường inject Resume cần coordinator, để cho integration kiểm chứng)
 	h.CancelCoCreate()
 	if h.cocreating {
 		t.Fatal("退出后占用标记应解除")
@@ -156,6 +157,9 @@ func TestBuildStoryStateSummary_NilStore(t *testing.T) {
 }
 
 func TestBuildStoryStateSummary_Populated(t *testing.T) {
+	prev := contentlang.Current()
+	contentlang.Set("zh")
+	t.Cleanup(func() { contentlang.Set(prev) })
 	dir := t.TempDir()
 	st := store.NewStore(dir)
 	if err := st.Init(); err != nil {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 	"github.com/voocel/ainovel-cli/internal/utils"
@@ -33,15 +34,15 @@ func errorKind(err error, msg string) string {
 	return ""
 }
 
-// 单调递增的事件 ID 计数器；配合时间戳生成稳定 ID。
+// Bộ đếm ID sự kiện tăng đơn điệu; kết hợp timestamp để sinh ID ổn định.
 var eventIDCounter uint64
 
 func nextEventID() string {
 	return fmt.Sprintf("e%d", atomic.AddUint64(&eventIDCounter, 1))
 }
 
-// activeCall 记录一次正在进行的调用（TOOL / DISPATCH）的 ID、起点时间与 summary。
-// summary 在完成事件时回填进 finish Event，保证 replay（runtime queue）能还原行内容。
+// activeCall ghi lại ID, thời điểm bắt đầu và summary của một lần gọi đang diễn ra (TOOL / DISPATCH).
+// summary được điền ngược vào finish Event khi hoàn thành, bảo đảm replay (runtime queue) khôi phục được nội dung dòng.
 type activeCall struct {
 	id      string
 	start   time.Time
@@ -49,38 +50,38 @@ type activeCall struct {
 	depth   int
 }
 
-// observer 订阅 coordinator 事件流并投影到 Host 的输出通道。
-// 它是纯观察者,不参与任何控制决策。
+// observer đăng ký event stream của coordinator và chiếu sang kênh output của Host.
+// Nó là observer thuần túy, không tham gia bất kỳ quyết định điều khiển nào.
 type observer struct {
 	unsub   func()
 	emitEv  func(Event)
 	emitD   func(string)
 	emitC   func()
-	store   *storepkg.Store // 用于 runtime queue 持久化（ReplayQueue 消费）
+	store   *storepkg.Store // dùng để persist runtime queue (ReplayQueue tiêu thụ)
 	agents  map[string]*agentState
 	agentMu sync.Mutex
 
-	// aborting 由 Host 在 Abort()/Close() 入口置位、Start/Resume/Continue 清位。
-	// 置位期间所有 context-cancel 衍生的错误事件被抑制（既是用户期望，也避免与
-	// "用户手动暂停"事件重复）。真实异常（非 cancel）仍照常上报。
+	// aborting được Host bật ở lối vào Abort()/Close(), xóa ở Start/Resume/Continue.
+	// Trong lúc bật, mọi sự kiện lỗi phát sinh từ context-cancel bị ức chế (vừa đúng kỳ vọng người dùng, vừa tránh
+	// trùng với sự kiện "người dùng tạm dừng thủ công"). Ngoại lệ thật (không phải cancel) vẫn báo như thường.
 	aborting atomic.Bool
 
 	streamThinking        bool
-	lastThinkingByAgent   map[string]string          // agent → 最近的累积 thinking 文本（用于提取增量 delta）
-	dispatchStarts        map[string]*activeCall     // dispatched agent → 进行中的 DISPATCH 调用
-	currentDispatchTarget string                     // 当前正在执行的 subagent 名（handleToolEnd 时 Args 可能为空）
-	toolStarts            map[string]*activeCall     // agent → 进行中的 TOOL 调用
-	streamExtractors      map[string]*agentExtractor // agent → 当前工具调用 JSON 参数的内容抽取器
-	streamHasContent      bool                       // 当前 streamRound 是否已输出过内容（判断是否需要段落分隔）
-	streamLastByte        byte                       // 最近一次流式输出的末字节（用于精确补齐换行）
+	lastThinkingByAgent   map[string]string          // agent → văn bản thinking tích lũy gần nhất (dùng để trích delta tăng tiến)
+	dispatchStarts        map[string]*activeCall     // dispatched agent → lời gọi DISPATCH đang diễn ra
+	currentDispatchTarget string                     // tên subagent đang thực thi (lúc handleToolEnd thì Args có thể rỗng)
+	toolStarts            map[string]*activeCall     // agent → lời gọi TOOL đang diễn ra
+	streamExtractors      map[string]*agentExtractor // agent → bộ trích nội dung từ tham số JSON của lời gọi tool hiện tại
+	streamHasContent      bool                       // streamRound hiện tại đã xuất nội dung hay chưa (để xét có cần ngăn đoạn không)
+	streamLastByte        byte                       // byte cuối của lần xuất stream gần nhất (dùng để bù xuống dòng chính xác)
 }
 
-// agentExtractor 记录某个 agent 当前正在抽取的工具名与抽取器实例。
-// 工具名用于检测"新的工具调用开始了"，避免缓存被上一轮残留污染。
+// agentExtractor ghi lại tên tool đang được trích và instance bộ trích của một agent.
+// Tên tool dùng để phát hiện "một lời gọi tool mới đã bắt đầu", tránh cache bị tàn dư lượt trước làm ô nhiễm.
 type agentExtractor struct {
 	tool       string
 	ext        *jsonFieldExtractor
-	emittedAny bool // 本 extractor 是否已经产出过内容；用于首次输出前补段落分隔
+	emittedAny bool // extractor này đã sinh nội dung hay chưa; dùng để bù ngăn đoạn trước lần xuất đầu tiên
 }
 
 type agentState struct {
@@ -118,13 +119,13 @@ func (o *observer) finalize() {
 	}
 }
 
-// setAborting 由 Host 在 Abort/Close/Start 等生命周期切换处调用，控制
-// "context canceled" 类衍生事件是否需要抑制（避免与"用户手动暂停"重复）。
+// setAborting được Host gọi ở các điểm chuyển vòng đời như Abort/Close/Start, điều khiển
+// việc các sự kiện phát sinh loại "context canceled" có cần ức chế hay không (tránh trùng với "người dùng tạm dừng thủ công").
 func (o *observer) setAborting(v bool) { o.aborting.Store(v) }
 
-// isCancellationNoise 判断一个错误是否为 abort 引发的衍生噪声。
-// 仅当 Host 处于 aborting 态时返回 true 才有意义——非 abort 期间的
-// context.Canceled 可能反映真实问题（如外部 ctx 被取消），仍应上报。
+// isCancellationNoise xét một lỗi có phải nhiễu phát sinh từ abort hay không.
+// Chỉ khi Host ở trạng thái aborting thì trả về true mới có ý nghĩa — context.Canceled ngoài
+// thời gian abort có thể phản ánh vấn đề thật (như ctx bên ngoài bị hủy), vẫn nên báo.
 func (o *observer) isCancellationNoise(err error, msg string) bool {
 	if !o.aborting.Load() {
 		return false
@@ -135,13 +136,13 @@ func (o *observer) isCancellationNoise(err error, msg string) bool {
 	return strings.Contains(strings.ToLower(msg), "context canceled")
 }
 
-// emitAndLog 用于调用类事件的"开始"态：发给 TUI 但不写入 runtime queue，
-// 避免 replay 时"开始一行、完成又一行"重复。slog 由 host.emitEvent 统一记录。
+// emitAndLog dùng cho trạng thái "bắt đầu" của sự kiện loại gọi: gửi cho TUI nhưng không ghi vào runtime queue,
+// tránh trùng "một dòng bắt đầu, một dòng hoàn thành" khi replay. slog do host.emitEvent ghi thống nhất.
 func (o *observer) emitAndLog(ev Event) {
 	o.emitEv(ev)
 }
 
-// persistEvent 把事件写入 runtime queue（slog 由 host.emitEvent 统一记录）。
+// persistEvent ghi sự kiện vào runtime queue (slog do host.emitEvent ghi thống nhất).
 func (o *observer) persistEvent(ev Event) {
 	if o.store == nil || o.store.Runtime == nil {
 		return
@@ -185,7 +186,7 @@ func (o *observer) handle(ev agentcore.Event) {
 			if ev.RetryInfo.Err != nil {
 				msg = ev.RetryInfo.Err.Error()
 			}
-			prefix := fmt.Sprintf("重试 (%d/%d): ", ev.RetryInfo.Attempt, ev.RetryInfo.MaxRetries)
+			prefix := fmt.Sprintf(contentlang.Pick("重试 (%d/%d): ", "Thử lại (%d/%d): "), ev.RetryInfo.Attempt, ev.RetryInfo.MaxRetries)
 			retryEv := Event{
 				Time:     time.Now(),
 				Category: "SYSTEM",
@@ -201,7 +202,7 @@ func (o *observer) handle(ev agentcore.Event) {
 		if ev.Err != nil {
 			fullMsg := ev.Err.Error()
 			if o.isCancellationNoise(ev.Err, fullMsg) {
-				// 用户主动 abort 衍生的 ctx-cancel 错误；已有"用户手动暂停"事件，不再重复刷屏。
+				// Lỗi ctx-cancel phát sinh từ abort chủ động của người dùng; đã có sự kiện "người dùng tạm dừng thủ công", không lặp lại làm ngập màn hình.
 				slog.Debug("suppressed cancel-derived error", "module", "agent", "msg", fullMsg)
 				return
 			}
@@ -223,7 +224,7 @@ func (o *observer) handleMessageUpdate(ev agentcore.Event) {
 	if ev.Delta == "" {
 		return
 	}
-	// Coordinator 的 tool-call 参数是给 subagent 的任务 JSON，没有可读内容，直接丢弃。
+	// Tham số tool-call của Coordinator là JSON nhiệm vụ cho subagent, không có nội dung đọc được, loại bỏ thẳng.
 	if ev.DeltaKind == agentcore.DeltaToolCall {
 		return
 	}
@@ -236,7 +237,7 @@ func (o *observer) handleToolStart(ev agentcore.Event) {
 	}
 	agent := agentFromEvent(ev)
 
-	// subagent 调用 → DISPATCH 事件（进行中）
+	// Lời gọi subagent → sự kiện DISPATCH (đang diễn ra)
 	if ev.Tool == "subagent" {
 		sub := parseSubagentArgs(ev.Args)
 		target := sub.agent
@@ -269,7 +270,7 @@ func (o *observer) handleToolStart(ev agentcore.Event) {
 		return
 	}
 
-	// coordinator 自身工具（进行中）
+	// Tool của chính coordinator (đang diễn ra)
 	toolName := displayToolName(ev.Tool, ev.Args)
 	o.updateAgent(agent, func(a *agentState) {
 		a.state = "working"
@@ -299,9 +300,9 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 			o.handleSubagentDelta(ev.Progress)
 		}
 	case agentcore.ProgressToolStart:
-		// 子代理内部的工具调用（如 writer → draft_chapter）。
-		// 注意：TOOL 行可能已经在流式识别阶段被 handleSubagentDelta 提前发出。
-		// 此处：若已发 → 只更新 summary（args 此时完整，能显示 "tool(第N章)"）；否则正常发。
+		// Lời gọi tool bên trong sub-agent (như writer → draft_chapter).
+		// Lưu ý: dòng TOOL có thể đã được handleSubagentDelta phát sớm ở giai đoạn nhận diện stream.
+		// Ở đây: nếu đã phát → chỉ cập nhật summary (args lúc này đầy đủ, hiển thị được "tool(chương N)"); nếu chưa thì phát bình thường.
 		if ev.Progress.Agent == "" || ev.Progress.Tool == "" {
 			break
 		}
@@ -309,7 +310,7 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 		if call, ok := o.toolStarts[ev.Progress.Agent]; ok {
 			if toolName != "" && toolName != call.summary {
 				call.summary = toolName
-				// 发 summary-only 更新事件（同 ID），TUI applyEvent 会合并
+				// Phát sự kiện cập nhật chỉ-summary (cùng ID), TUI applyEvent sẽ gộp
 				o.emitEv(Event{
 					ID:       call.id,
 					Time:     call.start,
@@ -327,10 +328,10 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 			})
 			break
 		}
-		// 未提前发过 → 正常流程
-		// （非流式 tool args 的模型不会触发 ensureSubagentToolStarted，
-		// fallback header 必须在这条路径上补一次，否则 read_chapter 这类
-		// 无 extractor 的工具流式面板上就没有 ✻ 头部，紧贴前面思考一段。）
+		// Chưa phát sớm → quy trình bình thường
+		// (model không stream tool args sẽ không kích hoạt ensureSubagentToolStarted,
+		// fallback header phải bù một lần trên đường này, nếu không thì các tool như read_chapter
+		// không có extractor sẽ không có đầu ✻ trên panel stream, dán sát ngay đoạn thinking phía trước.)
 		id := nextEventID()
 		o.toolStarts[ev.Progress.Agent] = &activeCall{id: id, start: time.Now(), summary: toolName, depth: 1}
 		o.emitAndLog(Event{
@@ -358,8 +359,8 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 			return
 		}
 		delete(o.toolStarts, ev.Progress.Agent)
-		// 同 ID 更新事件：TUI 按 ID 定位原 TOOL 行，回填 FinishedAt / Duration。
-		// Summary / Depth 也带上，保证 runtime queue replay 时能还原完整行。
+		// Sự kiện cập nhật cùng ID: TUI dựa ID định vị dòng TOOL gốc, điền ngược FinishedAt / Duration.
+		// Summary / Depth cũng mang theo, bảo đảm replay runtime queue khôi phục được dòng đầy đủ.
 		finishEv := Event{
 			ID:         call.id,
 			Time:       call.start,
@@ -376,7 +377,7 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 	case agentcore.ProgressThinking:
 		o.handleThinkingProgress(ev)
 	case agentcore.ProgressRetry:
-		prefix := fmt.Sprintf("重试 (%d/%d): ", ev.Progress.Attempt, ev.Progress.MaxRetries)
+		prefix := fmt.Sprintf(contentlang.Pick("重试 (%d/%d): ", "Thử lại (%d/%d): "), ev.Progress.Attempt, ev.Progress.MaxRetries)
 		retryEv := Event{
 			Time:     time.Now(),
 			Category: "SYSTEM",
@@ -395,7 +396,7 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 		if msg == "" {
 			msg = "unknown error"
 		}
-		// 如果有进行中的 TOOL 行，原地标记为失败；否则独立追加 ERROR 行。
+		// Nếu có dòng TOOL đang diễn ra thì đánh dấu thất bại tại chỗ; nếu không thì nối thêm một dòng ERROR độc lập.
 		if call, ok := o.toolStarts[ev.Progress.Agent]; ok {
 			delete(o.toolStarts, ev.Progress.Agent)
 			finishEv := Event{
@@ -413,13 +414,13 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 			o.emitEv(finishEv)
 			o.persistEvent(finishEv)
 		}
-		// 附加 ERROR 详情行（补充错误信息，便于排查）
+		// Nối thêm dòng chi tiết ERROR (bổ sung thông tin lỗi, tiện rà soát)
 		errEv := Event{
 			Time:     time.Now(),
 			Category: "ERROR",
 			Agent:    ev.Progress.Agent,
-			Summary:  fmt.Sprintf("%s 错误: %s", ev.Progress.Tool, truncate(msg, 100)),
-			Detail:   fmt.Sprintf("%s 错误: %s", ev.Progress.Tool, msg),
+			Summary:  fmt.Sprintf(contentlang.Pick("%s 错误: %s", "%s lỗi: %s"), ev.Progress.Tool, truncate(msg, 100)),
+			Detail:   fmt.Sprintf(contentlang.Pick("%s 错误: %s", "%s lỗi: %s"), ev.Progress.Tool, msg),
 			Kind:     errorKind(nil, msg),
 			Level:    "error",
 			Depth:    1,
@@ -431,33 +432,33 @@ func (o *observer) handleToolUpdate(ev agentcore.Event) {
 	}
 }
 
-// handleSubagentDelta 分流 subagent 的文本与工具调用参数：
-// - DeltaText 直接作为 markdown 流出
-// - DeltaToolCall 只对已知的长内容工具（如 draft_chapter.content）抽取字段流出；其他工具的参数 JSON 全部丢弃
+// handleSubagentDelta phân luồng văn bản và tham số lời gọi tool của subagent:
+// - DeltaText trực tiếp stream ra dưới dạng markdown
+// - DeltaToolCall chỉ trích field stream ra với các tool nội dung dài đã biết (như draft_chapter.content); tham số JSON của tool khác thì loại bỏ hết
 func (o *observer) handleSubagentDelta(p *agentcore.ProgressPayload) {
 	if p.DeltaKind != agentcore.DeltaToolCall {
 		o.emitStreamDelta(p.Delta, false)
 		return
 	}
 	if p.Tool == "" {
-		return // 工具名未就绪，下一个 delta 再试
+		return // tên tool chưa sẵn sàng, thử lại ở delta kế tiếp
 	}
 
-	// 流式识别到工具名时提前发 TOOL 进行中事件，让 spinner 覆盖整段 LLM 生成期间
-	// （否则 draft_chapter 这类工具的"进行中"只在真实 Execute 的几十毫秒里显示）。
-	// 真正的 ProgressToolStart 到来时识别到 toolStarts 已有记录，只会补齐 summary。
+	// Khi stream nhận diện được tên tool thì phát sớm sự kiện TOOL đang-diễn-ra, cho spinner phủ suốt cả đoạn LLM sinh
+	// (nếu không thì "đang diễn ra" của các tool như draft_chapter chỉ hiển thị trong vài chục mili giây Execute thật).
+	// Khi ProgressToolStart thật tới, nhận ra toolStarts đã có bản ghi, chỉ bù thêm summary.
 	o.ensureSubagentToolStarted(p.Agent, p.Tool)
 
 	cur, ok := o.streamExtractors[p.Agent]
-	// 同工具调用 args 已闭合（顶层 } 命中）后，仍可能收到 trailing delta：
-	// 某些 provider（deepseek-v4-flash 实测）会把单次 args 拆成多个 chunk，
-	// 最末一个 chunk 在 `}` 之后还跟着空白或重复字符。此时若按"工具名匹配 +
-	// Done 即重建"处理，新 extractor 又会 emit 一次 ✻ header 并把尾段 token
-	// 当作新 args 解析。这些 delta 是冗余尾巴，丢弃即可。
+	// Sau khi args của cùng lời gọi tool đã đóng (trúng } cấp đỉnh), vẫn có thể nhận trailing delta:
+	// một số provider (deepseek-v4-flash thực nghiệm) chia một lần args thành nhiều chunk,
+	// chunk cuối sau `}` còn kèm khoảng trắng hoặc ký tự lặp. Lúc này nếu xử lý theo "khớp tên tool +
+	// Done thì dựng lại", extractor mới lại emit một lần ✻ header và parse đoạn token đuôi
+	// như args mới. Các delta này là đuôi dư thừa, cứ loại bỏ.
 	if ok && cur.tool == p.Tool && cur.ext.Done() {
 		return
 	}
-	// 工具名变了或还没建过：新建。
+	// Tên tool đã đổi hoặc chưa dựng bao giờ: dựng mới.
 	if !ok || cur.tool != p.Tool {
 		ext := newToolExtractor(p.Tool)
 		if ext == nil {
@@ -470,16 +471,16 @@ func (o *observer) handleSubagentDelta(p *agentcore.ProgressPayload) {
 	if emitted := cur.ext.Feed(p.Delta); emitted != "" {
 		if !cur.emittedAny {
 			cur.emittedAny = true
-			// streamClear 让 extractor 的 ✻ header 落在新 round 起点，配合
-			// renderStreamContent 的 HasPrefix("✻") 检查走 renderAgentBlock 高亮
-			// 路径；用 ensureStreamParagraphBreak 只插空行不开 round，✻ 仍会被
-			// 前面的 thinking/正文包住，落到 renderChapterBlock 用默认色画掉。
+			// streamClear cho ✻ header của extractor rơi vào điểm bắt đầu round mới, phối với
+			// kiểm tra HasPrefix("✻") của renderStreamContent để đi đường highlight renderAgentBlock;
+			// nếu dùng ensureStreamParagraphBreak chỉ chèn dòng trống mà không mở round thì ✻ vẫn bị
+			// thinking/chính văn phía trước bao quanh, rơi vào renderChapterBlock bị vẽ mất bằng màu mặc định.
 			o.streamClear()
-			// streamClear 防御性清空了 streamExtractors。当前 cur 还要继续 Feed
-			// 本工具调用后续的 delta，必须立刻把它重新登记回去；否则下一段 delta
-			// 来时会新建 extractor，从 args 中段开始解析（在嵌套对象的 `{` 处
-			// 才进入 psBeforeKey），把 timeline_events.time / foreshadow_updates.id
-			// 等当成顶层字段，TUI 上重复出现 ✻ header。
+			// streamClear đã phòng thủ xóa sạch streamExtractors. cur hiện tại còn phải tiếp tục Feed
+			// các delta về sau của lời gọi tool này, phải lập tức đăng ký lại nó; nếu không thì khi đoạn delta
+			// kế tiếp tới sẽ dựng extractor mới, parse từ giữa chừng args (tới `{` của object lồng
+			// mới vào psBeforeKey), coi timeline_events.time / foreshadow_updates.id
+			// ... như field cấp đỉnh, ✻ header xuất hiện lặp trên TUI.
 			o.streamExtractors[p.Agent] = cur
 		}
 		o.emitStreamDelta(emitted, false)
@@ -525,7 +526,7 @@ func (o *observer) handleContextProgress(ev agentcore.Event) {
 		agent = "coordinator"
 	}
 
-	// 更新 agent 快照（TUI 侧边栏始终可见）
+	// Cập nhật snapshot agent (sidebar TUI luôn hiển thị)
 	o.updateAgent(agent, func(a *agentState) {
 		a.context = AgentContextSnapshot{
 			Tokens:        payload.Tokens,
@@ -540,7 +541,7 @@ func (o *observer) handleContextProgress(ev agentcore.Event) {
 	if payload.Percent > 85 {
 		level = "warn"
 	}
-	summary := fmt.Sprintf("%s 上下文 %.0f%% (%d/%d) 策略: %s", agent, payload.Percent, payload.Tokens, payload.ContextWindow, payload.Strategy)
+	summary := fmt.Sprintf(contentlang.Pick("%s 上下文 %.0f%% (%d/%d) 策略: %s", "%s ngữ cảnh %.0f%% (%d/%d) chiến lược: %s"), agent, payload.Percent, payload.Tokens, payload.ContextWindow, payload.Strategy)
 
 	depth := 0
 	if agent != "coordinator" {
@@ -548,12 +549,12 @@ func (o *observer) handleContextProgress(ev agentcore.Event) {
 	}
 
 	if payload.Strategy != "" {
-		// 触发了压缩 → 事件流 + 日志
+		// Đã kích hoạt nén → event stream + log
 		ctxEv := Event{Time: time.Now(), Category: "SYSTEM", Agent: agent, Summary: summary, Level: level, Depth: depth}
 		o.emitEv(ctxEv)
 		o.persistEvent(ctxEv)
 	} else {
-		// 普通使用率报告 → 仅日志
+		// Báo cáo tỉ lệ dùng thông thường → chỉ log
 		slogLevel := slog.LevelInfo
 		if level == "warn" {
 			slogLevel = slog.LevelWarn
@@ -564,15 +565,15 @@ func (o *observer) handleContextProgress(ev agentcore.Event) {
 
 func (o *observer) handleToolEnd(ev agentcore.Event) {
 	agent := agentFromEvent(ev)
-	// 工具结束：把状态切回 idle，否则侧边栏会永远停在 working。
-	// 子代理派遣结束时 dispatchTarget 的状态会在下方另行清除。
+	// Tool kết thúc: chuyển trạng thái về idle, nếu không sidebar sẽ mãi dừng ở working.
+	// Khi phái sub-agent kết thúc thì trạng thái của dispatchTarget được xóa riêng ở bên dưới.
 	o.updateAgent(agent, func(a *agentState) {
 		a.tool = ""
 		a.state = "idle"
 	})
 	delete(o.lastThinkingByAgent, agent)
 
-	// 取出进行中的 DISPATCH 记录（handleToolEnd 的 ev.Args 可能为空，从 currentDispatchTarget 取）
+	// Lấy bản ghi DISPATCH đang diễn ra (ev.Args của handleToolEnd có thể rỗng, lấy từ currentDispatchTarget)
 	var dispatchCall *activeCall
 	var dispatchTarget string
 	if ev.Tool == "subagent" {
@@ -590,7 +591,7 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 			dispatchCall = call
 			delete(o.dispatchStarts, dispatchTarget)
 		}
-		// 派遣结束：把子代理状态复位为 idle（成功/失败/错误路径都需要此清理）
+		// Phái kết thúc: reset trạng thái sub-agent về idle (các đường thành công/thất bại/lỗi đều cần dọn này)
 		if dispatchTarget != "subagent" {
 			o.updateAgent(dispatchTarget, func(a *agentState) {
 				a.state = "idle"
@@ -599,7 +600,7 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 		}
 	}
 
-	// 取出 coordinator 直接工具（非 subagent）的进行中记录（罕见，但保证一致性）
+	// Lấy bản ghi đang diễn ra của tool trực tiếp của coordinator (không phải subagent) (hiếm, nhưng giữ nhất quán)
 	var toolCall *activeCall
 	if ev.Tool != "subagent" {
 		if call, ok := o.toolStarts[agent]; ok {
@@ -608,7 +609,7 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 		}
 	}
 
-	// 统一的调用完成态（成功/失败），通过同 ID 更新原行
+	// Trạng thái hoàn thành lời gọi thống nhất (thành công/thất bại), cập nhật dòng gốc qua cùng ID
 	emitFinish := func(call *activeCall, category, agentName string, failed bool) {
 		if call == nil {
 			return
@@ -638,9 +639,9 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 	emitToolFinish := func(failed bool) {
 		emitFinish(toolCall, "TOOL", agent, failed)
 	}
-	// 兜底：若 subagent 结束时，该 subagent 内部还有未完成的 TOOL 调用（比如 ensureSubagentToolStarted
-	// 提前发了进行中事件，但随后 abort/context cancel 让 ProgressToolEnd 没来），
-	// 在这里强制发 finish，避免 TOOL 行永远"进行中"。状态跟随 dispatch 同步。
+	// Lưới đỡ: nếu khi subagent kết thúc, bên trong subagent đó vẫn còn lời gọi TOOL chưa hoàn thành (ví dụ ensureSubagentToolStarted
+	// đã phát sớm sự kiện đang-diễn-ra, nhưng sau đó abort/context cancel khiến ProgressToolEnd không tới),
+	// ở đây ép phát finish, tránh dòng TOOL mãi "đang diễn ra". Trạng thái đồng bộ theo dispatch.
 	flushOrphanSubagentTool := func(failed bool) {
 		if dispatchTarget == "" {
 			return
@@ -663,8 +664,8 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 		if len(ev.Result) > 0 {
 			errText = string(ev.Result)
 		}
-		// 用户主动 abort 衍生的 ctx-cancel：状态清理仍要走（dispatch / tool 行必须落回完成态），
-		// 但跳过独立 ERROR 行 + 错误日志，与 EventError 路径保持一致。
+		// ctx-cancel phát sinh từ abort chủ động của người dùng: vẫn phải dọn trạng thái (dòng dispatch / tool phải về trạng thái hoàn thành),
+		// nhưng bỏ qua dòng ERROR độc lập + log lỗi, nhất quán với đường EventError.
 		if o.isCancellationNoise(nil, errText) {
 			slog.Debug("suppressed cancel-derived tool error", "module", "agent", "tool", ev.Tool, "msg", errText)
 			flushOrphanSubagentTool(true)
@@ -672,7 +673,7 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 			emitToolFinish(true)
 			return
 		}
-		summary := fmt.Sprintf("%s 失败", ev.Tool)
+		summary := fmt.Sprintf(contentlang.Pick("%s 失败", "%s thất bại"), ev.Tool)
 		detail := summary
 		kind := ""
 		if errText != "" {
@@ -715,14 +716,14 @@ func (o *observer) handleToolEnd(ev agentcore.Event) {
 		return
 	}
 
-	// subagent 成功完成 → 更新原 DISPATCH 行为完成态（带耗时）
+	// subagent hoàn thành thành công → cập nhật dòng DISPATCH gốc thành trạng thái hoàn thành (kèm thời gian)
 	if ev.Tool == "subagent" {
 		flushOrphanSubagentTool(false)
 		emitDispatchFinish(false)
 		return
 	}
 
-	// coordinator 直接工具成功完成
+	// Tool trực tiếp của coordinator hoàn thành thành công
 	emitToolFinish(false)
 }
 
@@ -739,22 +740,22 @@ func (o *observer) emitStreamDelta(delta string, thinking bool) {
 	o.streamLastByte = delta[len(delta)-1]
 }
 
-// ensureSubagentToolStarted 在流式识别到 tool_call 首次出现时，提前为该 agent
-// 登记一次进行中的 TOOL 调用，使事件流的 spinner 覆盖"LLM 流式生成 tool_call
-// 参数"这一段时间（通常占调用总耗时的 99%）。args 此时尚不完整，暂以纯工具名
-// 为 summary；等真正的 ProgressToolStart 到来时会补齐带参数的 summary。
+// ensureSubagentToolStarted khi stream nhận diện tool_call xuất hiện lần đầu thì đăng ký sớm cho agent đó
+// một lời gọi TOOL đang-diễn-ra, để spinner của event stream phủ suốt đoạn "LLM stream sinh tham số
+// tool_call" (thường chiếm 99% tổng thời gian lời gọi). Lúc này args chưa đầy đủ, tạm dùng tên tool thuần
+// làm summary; khi ProgressToolStart thật tới sẽ bù summary kèm tham số.
 func (o *observer) ensureSubagentToolStarted(agent, tool string) {
 	if agent == "" || tool == "" {
 		return
 	}
 	if _, ok := o.toolStarts[agent]; ok {
-		return // 已有进行中调用，幂等
+		return // đã có lời gọi đang diễn ra, idempotent
 	}
 	id := nextEventID()
 	o.toolStarts[agent] = &activeCall{
 		id:      id,
 		start:   time.Now(),
-		summary: tool, // 先用纯工具名，ProgressToolStart 到来时可能更新为 tool(第N章)
+		summary: tool, // tạm dùng tên tool thuần, khi ProgressToolStart tới có thể cập nhật thành tool(chương N)
 		depth:   1,
 	}
 	o.emitAndLog(Event{
@@ -773,50 +774,50 @@ func (o *observer) ensureSubagentToolStarted(agent, tool string) {
 	o.emitFallbackStreamHeader(tool)
 }
 
-// emitFallbackStreamHeader 给未配置 extractor 的工具补一行 ✻ 标题到流面板。
-// 三条路径都要调用以保证一致：
-//  1. ensureSubagentToolStarted —— subagent 流式 tool args（DeltaToolCall）
-//  2. handleToolUpdate ProgressToolStart —— subagent 非流式 tool args
-//  3. handleToolStart —— coordinator 自身工具
+// emitFallbackStreamHeader bù một dòng tiêu đề ✻ vào panel stream cho các tool chưa cấu hình extractor.
+// Cả ba đường đều phải gọi để giữ nhất quán:
+//  1. ensureSubagentToolStarted —— subagent stream tool args (DeltaToolCall)
+//  2. handleToolUpdate ProgressToolStart —— subagent tool args không stream
+//  3. handleToolStart —— tool của chính coordinator
 //
-// 缺任何一条，同一个工具就会"writer 调有 ✻、coordinator 调没 ✻"或反过来。
+// Thiếu bất kỳ đường nào thì cùng một tool sẽ thành "writer gọi có ✻, coordinator gọi không ✻" hoặc ngược lại.
 func (o *observer) emitFallbackStreamHeader(tool string) {
 	if _, has := toolDisplays[tool]; has {
-		return // 有 extractor，header 由 extractor 自行输出
+		return // có extractor, header do extractor tự xuất
 	}
 	o.streamClear()
 	o.emitStreamDelta(streamHeaderFallback(tool)+"\n", false)
 }
 
-// streamHeaderFallback 为未配置 extractor 的工具生成流式 header 文本，
-// 让用户即使对轻量读取类工具也能看到"在调用什么"。
+// streamHeaderFallback sinh văn bản header stream cho các tool chưa cấu hình extractor,
+// để người dùng dù với tool loại đọc nhẹ cũng thấy được "đang gọi cái gì".
 //
-// 前缀 "✻ " 是约定的"agent 调度块"标记 — TUI 的 renderStreamContent 见到这个
-// 前缀会走 renderAgentBlock 路径渲染（图标 + 高亮 label + 分隔线），
-// 否则会落到正文块路径用终端默认色，header 看起来就是普通正文不醒目。
+// Prefix "✻ " là dấu quy ước "khối điều phối agent" — renderStreamContent của TUI thấy
+// prefix này sẽ render theo đường renderAgentBlock (icon + label highlight + đường ngăn),
+// nếu không sẽ rơi vào đường khối chính văn dùng màu mặc định của terminal, header trông như chính văn thường không nổi bật.
 func streamHeaderFallback(tool string) string {
 	label := tool
 	switch tool {
 	case "ask_user":
-		label = "向用户提问"
+		label = contentlang.Pick("向用户提问", "Hỏi người dùng")
 	}
 	return "✻ " + label
 }
 
-// streamClear 通知 TUI 开启新一轮 streamRound，同时重置与段落分隔相关的状态。
-// 逻辑上新 round 是"空 stream"，否则下一次首个 extractor emit 会误补前导空行。
+// streamClear báo cho TUI mở một streamRound mới, đồng thời reset các trạng thái liên quan đến ngăn đoạn.
+// Về mặt logic round mới là "stream rỗng", nếu không thì lần emit đầu tiên của extractor kế tiếp sẽ bù nhầm dòng trống dẫn đầu.
 //
-// streamThinking 必须一并重置：emitStreamDelta 用 streamThinking 跨调用追踪
-// 上一段是不是思考。新 round 内还没输出过任何内容，下一次 emit(thinking=false)
-// 不应该再插入 ThinkingSep。否则 fallback header（如 ✻ 读章节）会被 \x02
-// 抢先占头，renderStreamContent 的 HasPrefix("✻") 失配，整段落到正文路径
-// 再被 ThinkingSep 切分为思考段，title 颜色被画成思考色。
+// streamThinking phải reset cùng: emitStreamDelta dùng streamThinking để theo dõi xuyên lời gọi xem
+// đoạn trước có phải thinking. Trong round mới chưa xuất nội dung nào, lần emit(thinking=false) kế tiếp
+// không nên chèn ThinkingSep nữa. Nếu không thì fallback header (như ✻ đọc chương) sẽ bị \x02
+// chiếm đầu trước, HasPrefix("✻") của renderStreamContent không khớp, cả đoạn rơi vào đường chính văn
+// rồi bị ThinkingSep cắt thành đoạn thinking, màu title bị vẽ thành màu thinking.
 func (o *observer) streamClear() {
 	o.emitC()
 	o.streamHasContent = false
 	o.streamLastByte = 0
 	o.streamThinking = false
-	// 上一轮的 subagent 结束前 ProgressToolEnd 已 delete，这里防御性清空。
+	// ProgressToolEnd của subagent lượt trước đã delete trước khi kết thúc, ở đây xóa phòng thủ.
 	if len(o.streamExtractors) > 0 {
 		o.streamExtractors = make(map[string]*agentExtractor)
 	}
@@ -836,12 +837,12 @@ func (o *observer) subagentResultErrorEvent(ev agentcore.Event) (*Event, string)
 	if sub.agent != "" {
 		target = sub.agent
 	}
-	fullErr := fmt.Sprintf("%s 失败: %s", target, errMsg)
+	fullErr := fmt.Sprintf(contentlang.Pick("%s 失败: %s", "%s thất bại: %s"), target, errMsg)
 	return &Event{
 		Time:     time.Now(),
 		Category: "ERROR",
 		Agent:    "coordinator",
-		Summary:  fmt.Sprintf("%s 失败: %s", target, truncate(errMsg, 120)),
+		Summary:  fmt.Sprintf(contentlang.Pick("%s 失败: %s", "%s thất bại: %s"), target, truncate(errMsg, 120)),
 		Detail:   fullErr,
 		Kind:     errorKind(nil, errMsg),
 		Level:    "error",
@@ -905,7 +906,7 @@ func displayToolName(tool string, args json.RawMessage) string {
 			Chapter int `json:"chapter"`
 		}
 		if json.Unmarshal(args, &p) == nil && p.Chapter > 0 {
-			return fmt.Sprintf("%s(第%d章)", tool, p.Chapter)
+			return fmt.Sprintf(contentlang.Pick("%s(第%d章)", "%s(chương %d)"), tool, p.Chapter)
 		}
 	case "save_review":
 		var p struct {
@@ -917,12 +918,12 @@ func displayToolName(tool string, args json.RawMessage) string {
 			label := ""
 			switch p.Scope {
 			case "arc":
-				label = "本弧"
+				label = contentlang.Pick("本弧", "cung này")
 			case "global":
-				label = "全局"
+				label = contentlang.Pick("全局", "toàn cục")
 			default:
 				if p.Chapter > 0 {
-					label = fmt.Sprintf("第%d章", p.Chapter)
+					label = fmt.Sprintf(contentlang.Pick("第%d章", "chương %d"), p.Chapter)
 				}
 			}
 			if label == "" {
@@ -938,7 +939,7 @@ func displayToolName(tool string, args json.RawMessage) string {
 			Chapter int `json:"chapter"`
 		}
 		if json.Unmarshal(args, &p) == nil && p.Chapter > 0 {
-			return fmt.Sprintf("%s(第%d章)", tool, p.Chapter)
+			return fmt.Sprintf(contentlang.Pick("%s(第%d章)", "%s(chương %d)"), tool, p.Chapter)
 		}
 	case "read_chapter":
 		var p struct {
@@ -949,11 +950,11 @@ func displayToolName(tool string, args json.RawMessage) string {
 		if json.Unmarshal(args, &p) == nil && p.Chapter > 0 {
 			suffix := ""
 			if p.Character != "" {
-				suffix = "·" + p.Character + "对话"
+				suffix = "·" + p.Character + contentlang.Pick("对话", " thoại")
 			} else if p.Source == "draft" {
-				suffix = "·草稿"
+				suffix = contentlang.Pick("·草稿", "·bản nháp")
 			}
-			return fmt.Sprintf("%s(第%d章%s)", tool, p.Chapter, suffix)
+			return fmt.Sprintf(contentlang.Pick("%s(第%d章%s)", "%s(chương %d%s)"), tool, p.Chapter, suffix)
 		}
 	}
 	return tool
@@ -968,16 +969,16 @@ func parseSubagentResultError(result json.RawMessage) string {
 	if len(result) == 0 {
 		return ""
 	}
-	// 主流错误：{"error": "..."} 对象（unknown agent / invalid model / 子代理执行失败）
+	// Lỗi phổ biến: object {"error": "..."} (unknown agent / invalid model / sub-agent thực thi thất bại)
 	var obj struct {
 		Error string `json:"error"`
 	}
 	if err := json.Unmarshal(result, &obj); err == nil && obj.Error != "" {
 		return obj.Error
 	}
-	// 兼容 agentcore SubAgentTool 的裸字符串错误返回：
+	// Tương thích với việc trả lỗi dạng chuỗi trần của agentcore SubAgentTool:
 	// "Invalid parameters: ..." / "background mode requires ..." / "Too many parallel tasks ..."
-	// 这些是 tool 层参数校验失败，is_error=false 但内容是错误说明，需识别为错误避免误判为成功。
+	// Đây là lỗi kiểm tra tham số ở tầng tool, is_error=false nhưng nội dung là mô tả lỗi, cần nhận diện là lỗi để tránh hiểu nhầm là thành công.
 	var s string
 	if json.Unmarshal(result, &s) == nil && isSubagentErrorString(s) {
 		return s

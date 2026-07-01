@@ -12,7 +12,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
-// TestEditChapterAppliesEdit 正常路径：drafts 已有内容，唯一匹配替换成功。
+// TestEditChapterAppliesEdit đường đi bình thường: drafts đã có nội dung, khớp duy nhất và thay thế thành công.
 func TestEditChapterAppliesEdit(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -48,7 +48,7 @@ func TestEditChapterAppliesEdit(t *testing.T) {
 	}
 }
 
-// TestEditChapterSeedsFromFinalChapter drafts 不存在但 chapters 有 → 自动从 chapters 播种。
+// TestEditChapterSeedsFromFinalChapter drafts không tồn tại nhưng chapters có → tự động gieo mầm từ chapters.
 func TestEditChapterSeedsFromFinalChapter(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -59,7 +59,7 @@ func TestEditChapterSeedsFromFinalChapter(t *testing.T) {
 		t.Fatalf("InitProgress: %v", err)
 	}
 
-	// 模拟第 3 章已提交且进入打磨队列
+	// Mô phỏng chương 3 đã commit và vào hàng đợi mài giũa
 	original := "风从窗缝里钻进来，带着潮湿的泥土气味。"
 	if err := s.Drafts.SaveFinalChapter(3, original); err != nil {
 		t.Fatalf("SaveFinalChapter: %v", err)
@@ -84,7 +84,7 @@ func TestEditChapterSeedsFromFinalChapter(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	// drafts 应被播种且包含新文本
+	// drafts phải được gieo mầm và chứa văn bản mới
 	draft, err := s.Drafts.LoadDraft(3)
 	if err != nil {
 		t.Fatalf("LoadDraft: %v", err)
@@ -93,7 +93,7 @@ func TestEditChapterSeedsFromFinalChapter(t *testing.T) {
 		t.Fatalf("expected draft seeded + edited, got %q", draft)
 	}
 
-	// chapters 保持原样（edit_chapter 不碰终稿）
+	// chapters giữ nguyên (edit_chapter không động đến bản chốt)
 	final, err := s.Drafts.LoadChapterText(3)
 	if err != nil {
 		t.Fatalf("LoadChapterText: %v", err)
@@ -103,7 +103,7 @@ func TestEditChapterSeedsFromFinalChapter(t *testing.T) {
 	}
 }
 
-// TestEditChapterRejectsCompletedWithoutQueue 已完成且不在重写队列中 → 拒绝。
+// TestEditChapterRejectsCompletedWithoutQueue đã hoàn thành và không nằm trong hàng đợi viết lại → từ chối.
 func TestEditChapterRejectsCompletedWithoutQueue(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -139,7 +139,7 @@ func TestEditChapterRejectsCompletedWithoutQueue(t *testing.T) {
 	}
 }
 
-// TestEditChapterRejectsAmbiguousMatch 多处匹配且未开 replace_all → 报错。
+// TestEditChapterRejectsAmbiguousMatch khớp nhiều chỗ mà chưa bật replace_all → báo lỗi.
 func TestEditChapterRejectsAmbiguousMatch(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -164,7 +164,7 @@ func TestEditChapterRejectsAmbiguousMatch(t *testing.T) {
 	}
 }
 
-// TestEditChapterReplaceAll replace_all=true 时所有匹配均被替换。
+// TestEditChapterReplaceAll khi replace_all=true thì mọi chỗ khớp đều bị thay thế.
 func TestEditChapterReplaceAll(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -198,7 +198,7 @@ func TestEditChapterReplaceAll(t *testing.T) {
 	}
 }
 
-// TestEditChapterRejectsEmptyOldString 空 old_string → 参数非法。
+// TestEditChapterRejectsEmptyOldString old_string rỗng → tham số không hợp lệ.
 func TestEditChapterRejectsEmptyOldString(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -224,7 +224,7 @@ func TestEditChapterRejectsEmptyOldString(t *testing.T) {
 	}
 }
 
-// TestEditChapterRejectsNoDraftNoFinal drafts 与 chapters 都不存在 → 报错提示先 draft_chapter。
+// TestEditChapterRejectsNoDraftNoFinal cả drafts và chapters đều không tồn tại → báo lỗi nhắc draft_chapter trước.
 func TestEditChapterRejectsNoDraftNoFinal(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)
@@ -250,8 +250,8 @@ func TestEditChapterRejectsNoDraftNoFinal(t *testing.T) {
 	}
 }
 
-// TestEditChapterWorksWithCommitValidation 整条链路：edit_chapter → commit_chapter 成功 drain 队列。
-// 验证新工具与 commit_chapter 的 drafts≠chapters 硬校验配合良好。
+// TestEditChapterWorksWithCommitValidation toàn bộ chuỗi: edit_chapter → commit_chapter drain hàng đợi thành công.
+// Kiểm chứng tool mới phối hợp tốt với kiểm tra cứng drafts≠chapters của commit_chapter.
 func TestEditChapterWorksWithCommitValidation(t *testing.T) {
 	dir := t.TempDir()
 	s := store.NewStore(dir)

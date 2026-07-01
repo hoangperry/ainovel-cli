@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/voocel/ainovel-cli/assets"
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/diag"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/entry/startup"
@@ -23,9 +25,9 @@ type Options struct {
 	Stderr io.Writer
 }
 
-// Run 以无界面模式运行会话内核，直接消费 Engine 事件与流式输出。
-// 未来若新增“续写已有小说”等共享启动方式，不应直接堆到这里，
-// 而应先落到 internal/entry/startup，再由 headless 入口调用。
+// Run chạy lõi phiên ở chế độ không giao diện, tiêu thụ trực tiếp sự kiện Engine và output stream.
+// Sau này nếu thêm cách khởi động dùng chung như "viết tiếp tiểu thuyết có sẵn", không nên dồn thẳng vào đây,
+// mà nên đưa vào internal/entry/startup trước, rồi entry headless gọi.
 func Run(cfg bootstrap.Config, bundle assets.Bundle, opts Options) error {
 	stdout := opts.Stdout
 	if stdout == nil {
@@ -48,8 +50,8 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle, opts Options) error {
 	cleanup := logger.SetupFile(eng.Dir(), "headless.log", false)
 	defer cleanup()
 	defer eng.Close()
-	// 运行结束 / 出错返回时落一份脱敏诊断，方便 headless 用户贴 issue。
-	// （外部 kill 的挂死不走 defer，仍需在 TUI 里手动 /diag。）
+	// Khi chạy xong / trả về lỗi thì ghi một bản chẩn đoán đã ẩn danh, tiện cho người dùng headless dán vào issue.
+	// (Treo do kill từ ngoài không chạy defer, vẫn cần /diag thủ công trong TUI.)
 	defer func() { _, _ = diag.Export(store.NewStore(eng.Dir())) }()
 
 	prompt := strings.TrimSpace(opts.Prompt)
@@ -63,7 +65,9 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle, opts Options) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(stderr, "headless 启动: %s\n", eng.Dir())
+		fmt.Fprintln(stderr, contentlang.Pick(
+			fmt.Sprintf("headless 启动: %s", eng.Dir()),
+			fmt.Sprintf("headless khởi động: %s", eng.Dir())))
 		if err := eng.StartPrepared(plan.StartPrompt); err != nil {
 			return err
 		}
@@ -81,9 +85,13 @@ func Run(cfg bootstrap.Config, bundle assets.Bundle, opts Options) error {
 			return err
 		}
 		if label == "" {
-			return fmt.Errorf("headless 模式需要 --prompt，或输出目录 %q 下已有可恢复会话", eng.Dir())
+			return errors.New(contentlang.Pick(
+				fmt.Sprintf("headless 模式需要 --prompt，或输出目录 %q 下已有可恢复会话", eng.Dir()),
+				fmt.Sprintf("chế độ headless cần --prompt, hoặc thư mục đầu ra %q đã có phiên khôi phục được", eng.Dir())))
 		}
-		fmt.Fprintf(stderr, "headless 恢复: %s (%s)\n", eng.Dir(), label)
+		fmt.Fprintln(stderr, contentlang.Pick(
+			fmt.Sprintf("headless 恢复: %s (%s)", eng.Dir(), label),
+			fmt.Sprintf("headless khôi phục: %s (%s)", eng.Dir(), label)))
 		return consume(eng, stdout, stderr, roundHasContent)
 	}
 

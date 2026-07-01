@@ -1,77 +1,77 @@
 package diag
 
-// Severity 表示发现的严重程度。
+// Severity biểu thị mức độ nghiêm trọng của một phát hiện.
 type Severity string
 
 const (
-	SevCritical Severity = "critical" // 阻塞进度或数据损坏
-	SevWarning  Severity = "warning"  // 可能降低质量或浪费 token
-	SevInfo     Severity = "info"     // 可优化项
+	SevCritical Severity = "critical" // Chặn tiến độ hoặc hỏng dữ liệu
+	SevWarning  Severity = "warning"  // Có thể giảm chất lượng hoặc phí token
+	SevInfo     Severity = "info"     // Hạng mục có thể tối ưu
 )
 
-// Category 将发现按维度分组。
+// Category nhóm các phát hiện theo chiều.
 type Category string
 
 const (
-	CatFlow     Category = "flow"     // 流程卡顿、状态异常、恢复问题
-	CatQuality  Category = "quality"  // 评审评分、合同履约、一致性
-	CatPlanning Category = "planning" // 大纲缺口、伏笔漂移、指南针过时
-	CatContext  Category = "context"  // 角色/时间线/关系异常
+	CatFlow     Category = "flow"     // Quy trình kẹt, trạng thái bất thường, vấn đề khôi phục
+	CatQuality  Category = "quality"  // Điểm rà soát, mức đạt hợp đồng, tính nhất quán
+	CatPlanning Category = "planning" // Lỗ hổng dàn ý, trôi lệch phục bút, la bàn lỗi thời
+	CatContext  Category = "context"  // Bất thường nhân vật/dòng thời gian/quan hệ
 )
 
-// Confidence 表示规则判定的置信度。
+// Confidence biểu thị độ tin cậy của phán định quy tắc.
 type Confidence string
 
 const (
-	ConfHigh   Confidence = "high"   // 确定性强，可信赖
-	ConfMedium Confidence = "medium" // 启发式判断，可能有误判
-	ConfLow    Confidence = "low"    // 粗略信号，仅供参考
+	ConfHigh   Confidence = "high"   // Tính xác định mạnh, đáng tin
+	ConfMedium Confidence = "medium" // Phán đoán heuristic, có thể phán nhầm
+	ConfLow    Confidence = "low"    // Tín hiệu thô, chỉ để tham khảo
 )
 
-// AutoLevel 表示 Finding 是否可以转为自动化动作。
+// AutoLevel biểu thị liệu Finding có thể chuyển thành action tự động hoá hay không.
 type AutoLevel string
 
 const (
-	AutoNone    AutoLevel = "none"    // 仅报告，不自动
-	AutoSuggest AutoLevel = "suggest" // 建议动作但需人工确认
-	AutoSafe    AutoLevel = "safe"    // 可安全自动执行
+	AutoNone    AutoLevel = "none"    // Chỉ báo cáo, không tự động
+	AutoSuggest AutoLevel = "suggest" // Đề xuất action nhưng cần con người xác nhận
+	AutoSafe    AutoLevel = "safe"    // Có thể tự động thực thi an toàn
 )
 
-// Finding 是一条可执行的诊断结果。
+// Finding là một kết quả chẩn đoán có thể hành động.
 type Finding struct {
-	Rule       string     // 规则名，如 "StaleForeshadow"
-	Category   Category   // 分类
-	Severity   Severity   // 严重程度
-	Confidence Confidence // 判定置信度
-	AutoLevel  AutoLevel  // 自动化级别
-	Target     string     // 建议作用面，如 "runtime.flow"
-	Title      string     // 一行摘要
-	Evidence   string     // 具体数据证据
-	Suggestion string     // 改进建议（指向 prompt/flow/config）
+	Rule       string     // Tên quy tắc, ví dụ "StaleForeshadow"
+	Category   Category   // Phân loại
+	Severity   Severity   // Mức nghiêm trọng
+	Confidence Confidence // Độ tin cậy phán định
+	AutoLevel  AutoLevel  // Mức tự động hoá
+	Target     string     // Mặt tác động đề xuất, ví dụ "runtime.flow"
+	Title      string     // Tóm tắt một dòng
+	Evidence   string     // Bằng chứng dữ liệu cụ thể
+	Suggestion string     // Đề xuất cải thiện (trỏ tới prompt/flow/config)
 }
 
-// RuleFunc 是诊断规则的统一签名。
+// RuleFunc là chữ ký thống nhất của một quy tắc chẩn đoán.
 type RuleFunc func(snap *Snapshot) []Finding
 
-// ActionKind 表示诊断动作的类型。
+// ActionKind biểu thị loại action chẩn đoán.
 type ActionKind string
 
 const (
-	ActionEmitNotice      ActionKind = "emit_notice"       // 发系统提示
-	ActionEnqueueFollowUp ActionKind = "enqueue_follow_up" // 注入 coordinator follow-up
+	ActionEmitNotice      ActionKind = "emit_notice"       // Phát thông báo hệ thống
+	ActionEnqueueFollowUp ActionKind = "enqueue_follow_up" // Tiêm follow-up cho coordinator
 )
 
-// Action 是 Planner 根据高置信 Finding 生成的可执行动作。
+// Action là action có thể thực thi do Planner sinh ra dựa trên Finding độ tin cậy cao.
 type Action struct {
-	SourceRule  string     // 来源规则名
-	Kind        ActionKind // 动作类型
-	Severity    Severity   // 继承自 Finding
-	Summary     string     // 简短描述
-	Message     string     // 传递给控制流的消息
-	Fingerprint string     // 来源 Finding 的稳定指纹，用于运行时去重
+	SourceRule  string     // Tên quy tắc nguồn
+	Kind        ActionKind // Loại action
+	Severity    Severity   // Kế thừa từ Finding
+	Summary     string     // Mô tả ngắn
+	Message     string     // Thông điệp truyền cho luồng điều khiển
+	Fingerprint string     // Vân tay ổn định của Finding nguồn, dùng để khử trùng lặp lúc chạy
 }
 
-// Stats 是与发现并列展示的概览指标。
+// Stats là các chỉ số tổng quan trình bày song song với phát hiện.
 type Stats struct {
 	CompletedChapters int
 	TotalChapters     int
@@ -87,7 +87,7 @@ type Stats struct {
 	ForeshadowStale   int
 }
 
-// Report 是一次诊断运行的完整输出。
+// Report là output đầy đủ của một lần chạy chẩn đoán.
 type Report struct {
 	Stats    Stats
 	Findings []Finding

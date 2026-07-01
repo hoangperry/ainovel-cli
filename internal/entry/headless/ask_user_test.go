@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/tools"
 )
 
@@ -29,6 +30,8 @@ func TestTerminalAskUserSingleSelect(t *testing.T) {
 }
 
 func TestTerminalAskUserCustomInput(t *testing.T) {
+	contentlang.Set("zh")
+	defer contentlang.Set("vi")
 	handler := newTerminalAskUser(strings.NewReader("0\n不要感情线\n"), &strings.Builder{})
 	resp, err := handler.handle(context.Background(), []tools.Question{
 		{

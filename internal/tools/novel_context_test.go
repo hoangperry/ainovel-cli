@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/rules"
 	"github.com/voocel/ainovel-cli/internal/store"
@@ -76,6 +77,9 @@ func keysOf(m map[string]json.RawMessage) []string {
 }
 
 func TestContextToolReportsWarningsForCorruptedState(t *testing.T) {
+	// Assertion below checks the zh loading-summary warning label.
+	contentlang.Set("zh")
+	defer contentlang.Set("vi")
 	dir := t.TempDir()
 	store := store.NewStore(dir)
 	if err := store.Init(); err != nil {
@@ -435,6 +439,9 @@ func TestTrimByBudgetRemovesMirroredMemoryKeys(t *testing.T) {
 }
 
 func TestContextToolSelectedMemoryRecallsStoryThreadsAndReviewLessons(t *testing.T) {
+	// Assertions below pin to the zh content locale because they check zh recall/summary labels.
+	contentlang.Set("zh")
+	defer contentlang.Set("vi")
 	dir := t.TempDir()
 	s := store.NewStore(dir)
 	if err := s.Init(); err != nil {
@@ -532,16 +539,19 @@ func TestContextToolSelectedMemoryRecallsStoryThreadsAndReviewLessons(t *testing
 	}
 }
 
-// 久挂未回收的伏笔即使与当前章关键词无关，也应被账龄回填进 story_threads——
-// 这正是相关性召回的盲区（独自悬挂太久、却没在本章撞上关键词的那根线）。
-// 近期埋下的伏笔（账龄 < 阈值）不应被误标为"未回收"。
+// Phục bút treo lâu chưa thu hồi dù không liên quan đến từ khóa chương hiện tại cũng nên được bù theo tuổi tồn vào story_threads —
+// đây chính là điểm mù của triệu hồi theo độ liên quan (sợi dây treo một mình quá lâu mà không đụng từ khóa trong chương này).
+// Phục bút cài cắm gần đây (tuổi tồn < ngưỡng) không nên bị gắn nhầm là "chưa thu hồi".
 func TestContextToolSelectedMemorySurfacesAgingForeshadow(t *testing.T) {
+	// Assertion below checks the zh "未回收" overdue annotation in recall summaries.
+	contentlang.Set("zh")
+	defer contentlang.Set("vi")
 	dir := t.TempDir()
 	s := store.NewStore(dir)
 	if err := s.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	// 当前章主题与所有伏笔都不沾边，确保相关性召回为空，只剩账龄回填生效。
+	// Chủ đề chương hiện tại không dính dáng đến bất kỳ phục bút nào, đảm bảo triệu hồi theo độ liên quan rỗng, chỉ còn bù theo tuổi tồn có hiệu lực.
 	if err := s.Outline.SaveOutline([]domain.OutlineEntry{
 		{Chapter: 50, Title: "瘟疫", CoreEvent: "林砚在城南医馆救治瘟疫病患", Scenes: []string{"熬药", "封锁街巷"}},
 	}); err != nil {
@@ -550,7 +560,7 @@ func TestContextToolSelectedMemorySurfacesAgingForeshadow(t *testing.T) {
 	if err := s.Progress.Init("test", 60); err != nil {
 		t.Fatalf("InitProgress: %v", err)
 	}
-	// 6 条满足召回阈值；前两条账龄 ≥30（久挂），后四条账龄 <30（近期）。
+	// 6 mục thỏa ngưỡng triệu hồi; hai mục đầu tuổi tồn ≥30 (treo lâu), bốn mục sau tuổi tồn <30 (gần đây).
 	if err := s.World.SaveForeshadowLedger([]domain.ForeshadowEntry{
 		{ID: "ancient_seal", Description: "上古封印的裂隙", PlantedAt: 3, Status: "planted"},
 		{ID: "lost_bloodline", Description: "主角失落的血脉来历", PlantedAt: 5, Status: "advanced"},
@@ -581,7 +591,7 @@ func TestContextToolSelectedMemorySurfacesAgingForeshadow(t *testing.T) {
 		t.Fatalf("Unmarshal: %v", err)
 	}
 
-	// 两条久挂伏笔应被回填，且带"未回收"账龄标注。
+	// Hai phục bút treo lâu nên được bù, và kèm chú thích tuổi tồn "chưa thu hồi".
 	if !containsRecallSummary(payload.Selected.StoryThreads, "上古封印的裂隙") {
 		t.Fatalf("expected aging foreshadow to surface despite no relevance, got %+v", payload.Selected.StoryThreads)
 	}
@@ -591,7 +601,7 @@ func TestContextToolSelectedMemorySurfacesAgingForeshadow(t *testing.T) {
 	if !containsRecallSummary(payload.Selected.StoryThreads, "未回收") {
 		t.Fatalf("expected aging item to carry overdue annotation, got %+v", payload.Selected.StoryThreads)
 	}
-	// 近期伏笔（账龄 <30 且不相关）不应被回填。
+	// Phục bút gần đây (tuổi tồn <30 và không liên quan) không nên được bù.
 	if containsRecallSummary(payload.Selected.StoryThreads, "昨夜集市的口角") {
 		t.Fatalf("recent foreshadow must not be labeled overdue, got %+v", payload.Selected.StoryThreads)
 	}
@@ -905,7 +915,7 @@ func TestContextToolInjectsEmptyUserDirectives(t *testing.T) {
 	if !ok {
 		t.Fatal("missing working_memory")
 	}
-	// 空列表也注入 []（字段稳定，同 user_rules 先例），不能是 null/缺失
+	// Danh sách rỗng cũng tiêm [] (trường ổn định, theo tiền lệ user_rules), không được là null/thiếu
 	directives, ok := working["user_directives"].([]any)
 	if !ok {
 		t.Fatalf("expected stable empty array, got %T", working["user_directives"])

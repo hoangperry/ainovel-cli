@@ -3,11 +3,13 @@ package headless
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"sync"
 
+	"github.com/voocel/ainovel-cli/internal/contentlang"
 	"github.com/voocel/ainovel-cli/internal/tools"
 	"github.com/voocel/ainovel-cli/internal/utils"
 )
@@ -53,16 +55,16 @@ func (h *terminalAskUser) askOne(ctx context.Context, q tools.Question) (string,
 	for i, opt := range q.Options {
 		fmt.Fprintf(h.out, "  %d. %s - %s\n", i+1, opt.Label, opt.Description)
 	}
-	fmt.Fprintln(h.out, "  0. 自定义输入")
+	fmt.Fprintln(h.out, contentlang.Pick("  0. 自定义输入", "  0. Nhập tùy chỉnh"))
 
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", "", err
 		}
 		if q.MultiSelect {
-			fmt.Fprint(h.out, "请输入编号，多个用逗号分隔: ")
+			fmt.Fprint(h.out, contentlang.Pick("请输入编号，多个用逗号分隔: ", "Nhập số thứ tự, nhiều lựa chọn cách nhau bằng dấu phẩy: "))
 		} else {
-			fmt.Fprint(h.out, "请输入编号: ")
+			fmt.Fprint(h.out, contentlang.Pick("请输入编号: ", "Nhập số thứ tự: "))
 		}
 
 		line, err := h.readLine()
@@ -71,26 +73,28 @@ func (h *terminalAskUser) askOne(ctx context.Context, q tools.Question) (string,
 		}
 		line = utils.CleanInputLine(line)
 		if line == "" {
-			fmt.Fprintln(h.out, "输入不能为空，请重试。")
+			fmt.Fprintln(h.out, contentlang.Pick("输入不能为空，请重试。", "Không được để trống, vui lòng thử lại."))
 			continue
 		}
 		if line == "0" {
-			fmt.Fprint(h.out, "请输入自定义内容: ")
+			fmt.Fprint(h.out, contentlang.Pick("请输入自定义内容: ", "Nhập nội dung tùy chỉnh: "))
 			note, err := h.readLine()
 			if err != nil {
 				return "", "", err
 			}
 			note = utils.CleanInputLine(note)
 			if note == "" {
-				fmt.Fprintln(h.out, "自定义内容不能为空，请重试。")
+				fmt.Fprintln(h.out, contentlang.Pick("自定义内容不能为空，请重试。", "Nội dung tùy chỉnh không được để trống, vui lòng thử lại."))
 				continue
 			}
-			return "自定义", note, nil
+			return contentlang.Pick("自定义", "Tùy chỉnh"), note, nil
 		}
 
 		labels, err := parseSelections(line, q.Options, q.MultiSelect)
 		if err != nil {
-			fmt.Fprintf(h.out, "%v，请重试。\n", err)
+			fmt.Fprintln(h.out, contentlang.Pick(
+				fmt.Sprintf("%v，请重试。", err),
+				fmt.Sprintf("%v, vui lòng thử lại.", err)))
 			continue
 		}
 		return strings.Join(labels, "、"), "", nil
@@ -108,7 +112,7 @@ func (h *terminalAskUser) readLine() (string, error) {
 func parseSelections(line string, options []tools.Option, multi bool) ([]string, error) {
 	parts := strings.Split(line, ",")
 	if !multi && len(parts) > 1 {
-		return nil, fmt.Errorf("当前问题只允许单选")
+		return nil, errors.New(contentlang.Pick("当前问题只允许单选", "Câu hỏi này chỉ cho phép chọn một"))
 	}
 
 	seen := make(map[int]bool, len(parts))
@@ -116,15 +120,19 @@ func parseSelections(line string, options []tools.Option, multi bool) ([]string,
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
-			return nil, fmt.Errorf("编号不能为空")
+			return nil, errors.New(contentlang.Pick("编号不能为空", "Số thứ tự không được để trống"))
 		}
 
 		var idx int
 		if _, err := fmt.Sscanf(part, "%d", &idx); err != nil {
-			return nil, fmt.Errorf("无法识别编号 %q", part)
+			return nil, errors.New(contentlang.Pick(
+				fmt.Sprintf("无法识别编号 %q", part),
+				fmt.Sprintf("Không nhận dạng được số thứ tự %q", part)))
 		}
 		if idx <= 0 || idx > len(options) {
-			return nil, fmt.Errorf("编号 %d 超出范围", idx)
+			return nil, errors.New(contentlang.Pick(
+				fmt.Sprintf("编号 %d 超出范围", idx),
+				fmt.Sprintf("Số thứ tự %d ngoài phạm vi", idx)))
 		}
 		if seen[idx] {
 			continue
@@ -133,7 +141,7 @@ func parseSelections(line string, options []tools.Option, multi bool) ([]string,
 		labels = append(labels, options[idx-1].Label)
 	}
 	if len(labels) == 0 {
-		return nil, fmt.Errorf("至少选择一个选项")
+		return nil, errors.New(contentlang.Pick("至少选择一个选项", "Hãy chọn ít nhất một lựa chọn"))
 	}
 	return labels, nil
 }
